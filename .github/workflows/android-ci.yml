@@ -24,7 +24,7 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '17'
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6
       - run: ./gradlew :core:core-model:test
 
   lint-and-unit-test:
@@ -37,7 +37,7 @@ jobs:
           java-version: '17'
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6
       - run: ./gradlew lintDevDebug
       - run: ./gradlew testDevDebugUnitTest
 
@@ -51,7 +51,7 @@ jobs:
           java-version: '17'
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6
       - run: ./gradlew assembleDevDebug assembleStagingDebug
 
   # Instrumented UI tests need a real/emulated device — deferred to the
@@ -80,7 +80,7 @@ jobs:
           java-version: '17'
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
-      - uses: gradle/actions/dependency-submission@v4
+      - uses: gradle/actions/dependency-submission@v6
         with:
           # `defaults.run.working-directory` above only applies to `run:`
           # shell steps, not to this action — the Gradle project root has
