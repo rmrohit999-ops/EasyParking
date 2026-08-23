@@ -526,6 +526,12 @@ model OwnerPayoutAccount {
   upi_vpa_encrypted           String?
   verification_status         PayoutVerificationStatus @default(NOT_STARTED)
   is_primary                  Boolean                   @default(false)
+  // Set after the first successful RazorpayX payout to this account
+  // (RazorpayXPayoutProviderService creates the contact + fund account on
+  // first use, then reuses the fund_account_id on every later payout
+  // instead of re-creating it every time — see that service's doc comment).
+  razorpayx_contact_id        String?
+  razorpayx_fund_account_id   String?
   created_at                  DateTime                  @default(now())
   updated_at                  DateTime                  @updatedAt
 

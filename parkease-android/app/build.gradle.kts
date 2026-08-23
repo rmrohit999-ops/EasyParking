@@ -35,6 +35,14 @@ val hasReleaseSigningConfig: Boolean =
         !releaseKeyAlias.isNullOrBlank() &&
         !releaseKeyPassword.isNullOrBlank()
 
+// Razorpay's Checkout "key_id" is meant to be public/client-embeddable (the
+// secret half, key_secret, only ever lives on the backend — see
+// razorpay-provider.service.ts). Still read from env rather than committed,
+// same as everything else gateway-related: empty by default means Pay Now
+// honestly reports payments as unavailable rather than opening a checkout
+// sheet that can never succeed.
+val razorpayKeyId: String = System.getenv("RAZORPAY_KEY_ID") ?: ""
+
 android {
     namespace = "com.parkease.app"
     compileSdk = 36
@@ -45,6 +53,8 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = "0.1.0"
+
+        buildConfigField("String", "RAZORPAY_KEY_ID", "\"$razorpayKeyId\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -174,6 +184,8 @@ dependencies {
     implementation(libs.firebase.messaging.ktx)
     implementation(libs.firebase.crashlytics.ktx)
     implementation(libs.firebase.analytics.ktx)
+
+    implementation(libs.razorpay.checkout)
 
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)

@@ -7,6 +7,7 @@ import { AuthenticatedUser } from '../../common/decorators/current-user.decorato
 import { Money } from '../../common/money/money';
 import { BookingService } from '../booking/booking.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { AuditService } from '../audit/audit.service';
 import { PAYMENT_PROVIDER_SERVICE, PaymentProvider } from '../payments/provider/payment-provider.interface';
 import {
   AdminCancelBookingDto,
@@ -45,6 +46,7 @@ export class RefundsService {
     private readonly configService: ConfigService<AppConfig, true>,
     private readonly bookingService: BookingService,
     private readonly notificationsService: NotificationsService,
+    private readonly auditService: AuditService,
     @Inject(PAYMENT_PROVIDER_SERVICE) private readonly paymentProvider: PaymentProvider,
   ) {}
 
@@ -178,6 +180,18 @@ export class RefundsService {
         initiated_by: initiatedBy,
         approved_by: opts.approvedBy ?? null,
       },
+    });
+
+    // Single choke point for every refund path (self-cancel, admin-cancel,
+    // parking-unavailable, mismatch-rejected, admin-manual) — one call here
+    // covers all of them rather than repeating it at each call site.
+    await this.auditService.record({
+      actorId: initiatedBy,
+      actorRole: opts.approvedBy ? 'ADMIN' : null,
+      action: 'ISSUE_REFUND',
+      targetType: 'Refund',
+      targetId: refund.id,
+      afterState: { bookingId, reasonCode, amountMinorUnits: amountMinorUnits.toString(), refundType, note: opts.note },
     });
 
     if (refundType === 'NONE' || amountMinorUnits === 0n) {
@@ -402,6 +416,14 @@ export class RefundsService {
     const updated = await this.prisma.refund.update({
       where: { id: refundId },
       data: { status: 'COMPLETED', completed_at: new Date(), approved_by: actorUser.id },
+    });
+    await this.auditService.record({
+      actorId: actorUser.id,
+      actorRole: actorUser.roles.includes('ADMIN') ? 'ADMIN' : 'OWNER',
+      action: 'CONFIRM_CASH_REFUND',
+      targetType: 'Refund',
+      targetId: refundId,
+      afterState: { note: dto.auditNote },
     });
     return toRefundView(updated);
   }

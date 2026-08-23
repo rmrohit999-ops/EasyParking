@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AppConfig } from '../../common/config/configuration';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { AuditModule } from '../audit/audit.module';
 import { PayoutAccountsController } from './payout-accounts.controller';
 import { PayoutAccountsService } from './payout-accounts.service';
 import { EarningsController } from './earnings.controller';
@@ -21,7 +22,7 @@ import { NullPayoutProviderService } from './provider/null-payout-provider.servi
  * provider-selection factory exactly.
  */
 @Module({
-  imports: [NotificationsModule],
+  imports: [NotificationsModule, AuditModule],
   controllers: [PayoutAccountsController, EarningsController, SettlementsController],
   providers: [
     PayoutAccountsService,

@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { ApprovalStatus, ListingStatus, PhotoType } from '@prisma/client';
+import { ApprovalStatus, ListingStatus, PhotoType, Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { OwnershipResolver } from '../../common/guards/resource-ownership.guard';
 import { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
@@ -175,7 +175,7 @@ export class ParkingService {
           has_cctv: dto.hasCctv ?? false,
           has_ev_charging: dto.hasEvCharging ?? false,
           instant_mode_enabled: dto.instantModeEnabled ?? false,
-          operating_hours: dto.operatingHours,
+          operating_hours: dto.operatingHours as Prisma.InputJsonValue | undefined,
           location_notes: dto.locationNotes,
         },
       });
@@ -224,7 +224,7 @@ export class ParkingService {
           has_cctv: dto.hasCctv,
           has_ev_charging: dto.hasEvCharging,
           instant_mode_enabled: dto.instantModeEnabled,
-          operating_hours: dto.operatingHours,
+          operating_hours: dto.operatingHours as Prisma.InputJsonValue | undefined,
           location_notes: dto.locationNotes,
         },
       });

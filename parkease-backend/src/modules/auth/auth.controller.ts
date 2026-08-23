@@ -23,6 +23,7 @@ export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Public()
+  @Throttle({ limit: 5, windowSeconds: 60 })
   @Post('register')
   @ApiOperation({ summary: 'Register with email+password or phone (verify via OTP separately)' })
   register(@Body() dto: RegisterDto, @Req() req: Request) {
@@ -61,6 +62,7 @@ export class AuthController {
   }
 
   @Public()
+  @Throttle({ limit: 10, windowSeconds: 60 })
   @Post('refresh')
   @ApiOperation({ summary: 'Rotate a refresh token for a new access/refresh pair' })
   refresh(@Body() dto: RefreshDto) {
@@ -84,6 +86,7 @@ export class AuthController {
   }
 
   @Public()
+  @Throttle({ limit: 5, windowSeconds: 300 })
   @Post('reset-password')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Complete a password reset using the emailed token' })

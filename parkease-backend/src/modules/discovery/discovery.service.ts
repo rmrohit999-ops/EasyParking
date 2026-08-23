@@ -3,7 +3,7 @@ import { ApprovalStatus, ListingStatus, VehicleCategory, VehicleType } from '@pr
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { SearchParkingQueryDto } from './dto/discovery.dto';
 
-interface SearchRow {
+export interface SearchRow {
   listing_id: string;
   listing_name: string;
   parking_type: string;

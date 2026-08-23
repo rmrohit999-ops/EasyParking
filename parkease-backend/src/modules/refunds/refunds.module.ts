@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { BookingModule } from '../booking/booking.module';
 import { PaymentsModule } from '../payments/payments.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { AuditModule } from '../audit/audit.module';
 import { RefundsController } from './refunds.controller';
 import { RefundsService } from './refunds.service';
 
@@ -12,10 +13,12 @@ import { RefundsService } from './refunds.service';
  * PAYMENT_PROVIDER_SERVICE token (to dispatch a gateway refund) — neither
  * of those modules imports this one, so the dependency graph stays a DAG
  * exactly like QrModule's relationship to BookingModule/LedgerModule in
- * Milestone 8.
+ * Milestone 8. AuditModule added so refund decisions (admin manual refund,
+ * cash refund confirmation) leave the same audit trail as every other
+ * financially-sensitive admin action.
  */
 @Module({
-  imports: [BookingModule, PaymentsModule, NotificationsModule],
+  imports: [BookingModule, PaymentsModule, NotificationsModule, AuditModule],
   controllers: [RefundsController],
   providers: [RefundsService],
   exports: [RefundsService],

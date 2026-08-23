@@ -13,3 +13,6 @@ google-services.json
 /*/build
 **/build/
 **/local.properties
+*.jks
+*.keystore
+credentials.txt

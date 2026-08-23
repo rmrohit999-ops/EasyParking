@@ -1,13 +1,16 @@
 @file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 package com.parkease.feature.booking.ui
 
+import android.app.Activity
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -16,6 +19,8 @@ import com.parkease.core.model.BookingStatus
 import com.parkease.feature.booking.data.BookingUi
 import com.parkease.feature.booking.data.PassUi
 import com.parkease.feature.booking.data.RefundUi
+import com.razorpay.Checkout
+import org.json.JSONObject
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
@@ -25,6 +30,31 @@ fun BookingDetailScreen(
     viewModel: BookingDetailViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+
+    // Fires once per created order (readyToLaunchCheckoutForOrderId is
+    // cleared by onCheckoutLaunched right after), opening Razorpay's
+    // Checkout activity. Requires `context` to actually be the launching
+    // Activity — true here since this is a single-Activity app and
+    // MainActivity is the one that implements PaymentResultWithDataListener
+    // (see MainActivity's doc comment for why that has to be an Activity,
+    // not this Composable, that implements the callback).
+    LaunchedEffect(uiState.readyToLaunchCheckoutForOrderId) {
+        val order = uiState.paymentOrder ?: return@LaunchedEffect
+        if (uiState.readyToLaunchCheckoutForOrderId != order.id) return@LaunchedEffect
+        val activity = context as? Activity ?: return@LaunchedEffect
+        val checkout = Checkout()
+        checkout.setKeyID(viewModel.razorpayKeyId)
+        val options = JSONObject().apply {
+            put("name", "ParkEase")
+            put("description", "Parking booking payment")
+            put("order_id", order.gatewayOrderId)
+            put("currency", order.currency)
+            put("amount", order.amountMinorUnits.toLongOrNull() ?: 0L)
+        }
+        viewModel.onCheckoutLaunched()
+        checkout.open(activity, options)
+    }
 
     Scaffold(
         topBar = {

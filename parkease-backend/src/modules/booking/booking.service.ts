@@ -187,7 +187,7 @@ export class BookingService {
           status: BookingStatus.PENDING_PAYMENT,
           start_time: args.startTime,
           end_time: args.endTime,
-          price_snapshot: args.priceSnapshot,
+          price_snapshot: args.priceSnapshot as Prisma.InputJsonValue,
           policy_snapshot: {
             note: 'Cancellation/commission/tax policy versioning is configured starting Milestone 9/10 — none are attached yet.',
           },
@@ -435,7 +435,7 @@ export class BookingService {
           old_status: expectedCurrentStatus,
           new_status: newStatus,
           reason: actor.reason,
-          metadata: actor.metadata,
+          metadata: actor.metadata as Prisma.InputJsonValue | undefined,
         },
       });
 

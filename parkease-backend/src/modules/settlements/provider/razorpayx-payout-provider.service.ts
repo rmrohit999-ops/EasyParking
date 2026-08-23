@@ -17,12 +17,13 @@ import { CreateGatewayPayoutParams, GatewayPayoutResult, PayoutProvider } from '
  * Like every other external gateway in this build, this sandbox has no
  * live RAZORPAYX_* credentials and no network egress to exercise this
  * class end-to-end — disclosed here exactly as it is on
- * RazorpayProviderService. A payout also requires a Razorpay "contact" +
- * "fund account" to exist for the payee before /payouts will accept a
- * request; creating those is a real, separate RazorpayX API call this
- * class does not yet make (an MVP scope cut, not a hidden shortcut) — see
- * SettlementsService's doc comment for how that gap is surfaced rather
- * than silently worked around.
+ * RazorpayProviderService. A payout requires a Razorpay "contact" + "fund
+ * account" to exist for the payee before /payouts will accept a request:
+ * on an account's first payout (no existingFundAccountId passed in), this
+ * class makes the real contact.create -> fund_account.create calls and
+ * returns the new fund_account_id for SettlementsService to persist onto
+ * OwnerPayoutAccount; every later payout to the same account reuses that
+ * id directly instead of re-creating a contact/fund account each time.
  */
 @Injectable()
 export class RazorpayXPayoutProviderService implements PayoutProvider {
@@ -59,60 +60,72 @@ export class RazorpayXPayoutProviderService implements PayoutProvider {
     return 'Basic ' + Buffer.from(`${this.keyId}:${this.keySecret}`).toString('base64');
   }
 
-  async createPayout(params: CreateGatewayPayoutParams): Promise<GatewayPayoutResult> {
-    this.requireConfigured();
-
-    // NOTE (disclosed MVP gap): RazorpayX payouts target a `fund_account_id`,
-    // not a raw account number/VPA — the real integration path is
-    // contact.create -> fund_account.create -> payout.create. Since this
-    // sandbox can never reach the live API to validate that flow either
-    // way, this call sends the destination details inline via
-    // `fund_account` object creation shorthand RazorpayX's API accepts on
-    // /payouts for a first-time payee, which is the closest single-call
-    // approximation of the real flow; a production rollout should persist
-    // the returned fund_account id on OwnerPayoutAccount and reuse it on
-    // subsequent payouts rather than re-creating it every time.
-    const fundAccount =
-      params.destination.method === 'BANK'
-        ? {
-            account_type: 'bank_account',
-            bank_account: {
-              name: params.destination.accountHolderName,
-              account_number: params.destination.accountNumber,
-              ifsc: params.destination.ifsc,
-            },
-          }
-        : {
-            account_type: 'vpa',
-            vpa: { address: params.destination.upiVpa },
-          };
-
-    const response = await fetch(`${RazorpayXPayoutProviderService.API_BASE}/payouts`, {
+  private async postJson<T>(path: string, body: unknown, idempotencyKey?: string): Promise<T> {
+    const response = await fetch(`${RazorpayXPayoutProviderService.API_BASE}${path}`, {
       method: 'POST',
       headers: {
         Authorization: this.authHeader(),
         'Content-Type': 'application/json',
-        'X-Payout-Idempotency': params.idempotencyKey,
+        ...(idempotencyKey ? { 'X-Payout-Idempotency': idempotencyKey } : {}),
       },
-      body: JSON.stringify({
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) {
+      const responseBody = await response.text().catch(() => '');
+      this.logger.error(`RazorpayX ${path} failed: ${response.status} ${responseBody}`);
+      throw new ServiceUnavailableException('The payout gateway rejected the request. Please try again.');
+    }
+    return response.json() as Promise<T>;
+  }
+
+  /** POST /contacts — a vendor being paid out, not a customer (Razorpay's own terminology for this direction of money movement). */
+  private async createContact(accountHolderName: string, referenceId: string): Promise<string> {
+    const contact = await this.postJson<{ id: string }>('/contacts', {
+      name: accountHolderName,
+      type: 'vendor',
+      reference_id: referenceId,
+    });
+    return contact.id;
+  }
+
+  /** POST /fund_accounts — links a bank account or UPI VPA to a contact so /payouts can target it by fund_account_id. */
+  private async createFundAccount(contactId: string, destination: CreateGatewayPayoutParams['destination']): Promise<string> {
+    const fundAccount = await this.postJson<{ id: string }>('/fund_accounts', {
+      contact_id: contactId,
+      account_type: destination.method === 'BANK' ? 'bank_account' : 'vpa',
+      ...(destination.method === 'BANK'
+        ? { bank_account: { name: destination.accountHolderName, account_number: destination.accountNumber, ifsc: destination.ifsc } }
+        : { vpa: { address: destination.upiVpa } }),
+    });
+    return fundAccount.id;
+  }
+
+  async createPayout(params: CreateGatewayPayoutParams): Promise<GatewayPayoutResult> {
+    this.requireConfigured();
+
+    let fundAccountId = params.existingFundAccountId;
+    let newContactId: string | undefined;
+
+    if (!fundAccountId) {
+      newContactId = await this.createContact(params.destination.accountHolderName, params.referenceId);
+      fundAccountId = await this.createFundAccount(newContactId, params.destination);
+    }
+
+    const json = await this.postJson<{ id: string; status: string }>(
+      '/payouts',
+      {
         account_number: this.accountNumber,
-        fund_account: fundAccount,
+        fund_account_id: fundAccountId,
         amount: Number(params.amountMinorUnits),
         currency: params.currency,
         mode: params.destination.method === 'BANK' ? 'IMPS' : 'UPI',
         purpose: 'payout',
         queue_if_low_balance: true,
         reference_id: params.referenceId,
-      }),
-    });
+      },
+      params.idempotencyKey,
+    );
 
-    if (!response.ok) {
-      const body = await response.text().catch(() => '');
-      this.logger.error(`RazorpayX payout failed: ${response.status} ${body}`);
-      throw new ServiceUnavailableException('The payout gateway rejected the transfer. Please try again.');
-    }
-
-    const json = (await response.json()) as { id: string; status: string };
-    return { gatewayPayoutId: json.id, status: json.status };
+    return { gatewayPayoutId: json.id, status: json.status, fundAccountId, contactId: newContactId };
   }
 }

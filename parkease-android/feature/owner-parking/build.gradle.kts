@@ -22,8 +22,10 @@ dependencies {
     implementation(project(":core:core-model"))
     implementation(project(":core:core-network"))
     implementation(project(":core:core-ui"))
+    implementation(project(":core:core-location"))
 
     implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.navigation.compose)

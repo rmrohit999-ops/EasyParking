@@ -16,11 +16,22 @@ export interface CreateGatewayPayoutParams {
   /** Our own Settlement.id, passed through so a support agent can cross-reference without a DB lookup. */
   referenceId: string;
   idempotencyKey: string;
+  /**
+   * OwnerPayoutAccount.razorpayx_fund_account_id from a prior payout to
+   * this same account, if one exists — lets the provider skip re-creating
+   * a contact/fund account on every payout. Undefined on a payout account's
+   * first-ever payout.
+   */
+  existingFundAccountId?: string;
 }
 
 export interface GatewayPayoutResult {
   gatewayPayoutId: string;
   status: string;
+  /** The fund_account_id used for this payout (freshly created, or the reused existingFundAccountId) — caller persists it onto OwnerPayoutAccount for reuse. */
+  fundAccountId: string;
+  /** Only set when a new contact was created this call (first payout to this account). */
+  contactId?: string;
 }
 
 export interface PayoutProvider {

@@ -6,6 +6,7 @@ import { AppConfig } from '../../common/config/configuration';
 import { decryptField } from '../../common/crypto/field-encryption';
 import { CreateGatewayPayoutParams, PAYOUT_PROVIDER_SERVICE, PayoutProvider } from './provider/payout-provider.interface';
 import { NotificationsService } from '../notifications/notifications.service';
+import { AuditService } from '../audit/audit.service';
 import { Money } from '../../common/money/money';
 
 /**
@@ -28,6 +29,7 @@ export class SettlementsService {
     private readonly configService: ConfigService<AppConfig, true>,
     @Inject(PAYOUT_PROVIDER_SERVICE) private readonly payoutProvider: PayoutProvider,
     private readonly notificationsService: NotificationsService,
+    private readonly auditService: AuditService,
   ) {}
 
   // ---------------------------------------------------------------------
@@ -151,6 +153,7 @@ export class SettlementsService {
         destination,
         referenceId: settlement.id,
         idempotencyKey: settlement.id,
+        existingFundAccountId: settlement.payout_account.razorpayx_fund_account_id ?? undefined,
       });
 
       const items = await this.prisma.settlementItem.findMany({ where: { settlement_id: settlementId } });
@@ -163,12 +166,35 @@ export class SettlementsService {
           where: { id: { in: items.map((i) => i.owner_earnings_ledger_id) } },
           data: { status: 'SETTLED' },
         });
+        // Only set on the account's first payout (see RazorpayXPayoutProviderService) — persisted here so every later payout reuses it instead of re-creating a contact/fund account.
+        if (!settlement.payout_account.razorpayx_fund_account_id) {
+          await tx.ownerPayoutAccount.update({
+            where: { id: settlement.payout_account_id },
+            data: { razorpayx_fund_account_id: result.fundAccountId, razorpayx_contact_id: result.contactId },
+          });
+        }
       });
       await this.notifySettlementOutcome(settlement.owner_id, 'SETTLED', settlement.requested_amount);
+      await this.auditService.record({
+        actorId: null,
+        actorRole: null,
+        action: 'DISPATCH_PAYOUT',
+        targetType: 'Settlement',
+        targetId: settlementId,
+        afterState: { status: 'SETTLED', amountMinorUnits: settlement.requested_amount.toString(), gatewayPayoutId: result.gatewayPayoutId },
+      });
     } catch (err) {
       this.logger.error(`Payout dispatch failed for settlement ${settlementId}: ${(err as Error).message}`);
       await this.releaseBackToAvailable(settlementId, 'FAILED');
       await this.notifySettlementOutcome(settlement.owner_id, 'FAILED', settlement.requested_amount);
+      await this.auditService.record({
+        actorId: null,
+        actorRole: null,
+        action: 'DISPATCH_PAYOUT',
+        targetType: 'Settlement',
+        targetId: settlementId,
+        afterState: { status: 'FAILED', amountMinorUnits: settlement.requested_amount.toString(), error: (err as Error).message },
+      });
       throw err;
     }
 

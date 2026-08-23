@@ -4,6 +4,7 @@ import com.parkease.core.datastore.SessionStore
 import com.parkease.core.datastore.SessionTokens
 import com.parkease.core.network.api.AuthApi
 import com.parkease.core.network.model.*
+import com.squareup.moshi.Moshi
 import kotlinx.coroutines.flow.Flow
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -23,6 +24,7 @@ sealed class AuthResult {
 class AuthRepository @Inject constructor(
     private val authApi: AuthApi,
     private val sessionStore: SessionStore,
+    private val moshi: Moshi,
 ) {
     val isLoggedIn: Flow<Boolean> get() = sessionStore.isLoggedIn
 
@@ -60,6 +62,20 @@ class AuthRepository @Inject constructor(
         sessionStore.clear()
     }
 
+    /**
+     * Backend anonymizes the account and revokes every session
+     * (AuthService.deleteAccount) — this call was previously wired into
+     * AuthApi but never reachable from any screen. Clearing the local
+     * session store here (rather than relying on a subsequent logout) means
+     * a successful delete immediately flips SessionStore.isLoggedIn to
+     * false, which is what actually navigates the user back to the auth
+     * graph in RootNavHost.
+     */
+    suspend fun deleteAccount(): AuthResult = runCatchingAuth {
+        authApi.deleteAccount()
+        sessionStore.clear()
+    }
+
     private suspend fun persist(tokens: TokenPairResponse) {
         sessionStore.saveTokens(
             SessionTokens(
@@ -86,6 +102,20 @@ class AuthRepository @Inject constructor(
         403 -> "You do not have permission to perform this action."
         409 -> "An account with those details already exists."
         429 -> "Too many attempts. Please wait a moment and try again."
-        else -> "We couldn't complete that right now. Please try again."
+        // Everything else (503 "feature not configured" in particular — see
+        // OtpService.requestOtp's no-fakes rule — but also any other status
+        // this client doesn't special-case) shows the server's own message
+        // rather than a duplicated generic string, so "unavailable" and
+        // "actually broke" no longer read identically to the user.
+        else -> serverMessageOrDefault(e)
+    }
+
+    private fun serverMessageOrDefault(e: retrofit2.HttpException): String {
+        val body = e.response()?.errorBody()?.string()
+        val parsed = body?.let {
+            runCatching { moshi.adapter(ApiErrorBody::class.java).fromJson(it) }.getOrNull()
+        }
+        return parsed?.error?.message?.takeIf { it.isNotBlank() }
+            ?: "We couldn't complete that right now. Please try again."
     }
 }

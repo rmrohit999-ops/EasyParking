@@ -3,6 +3,8 @@ package com.parkease.feature.booking.ui
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.parkease.core.network.payments.RazorpayCheckoutResult
+import com.parkease.core.network.payments.RazorpayResultBus
 import com.parkease.feature.booking.data.BookingActionResult
 import com.parkease.feature.booking.data.BookingRepository
 import com.parkease.feature.booking.data.BookingUi
@@ -10,11 +12,13 @@ import com.parkease.feature.booking.data.PassUi
 import com.parkease.feature.booking.data.PaymentOrderUi
 import com.parkease.feature.booking.data.RefundUi
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+import javax.inject.Named
 
 data class BookingDetailUiState(
     val isLoading: Boolean = true,
@@ -24,6 +28,8 @@ data class BookingDetailUiState(
     val paymentOrder: PaymentOrderUi? = null,
     val paymentInProgress: Boolean = false,
     val paymentMessage: String? = null,
+    /** Set once per created order so the screen knows to launch Razorpay Checkout exactly once for it. */
+    val readyToLaunchCheckoutForOrderId: String? = null,
     val pass: PassUi? = null,
     val passLoading: Boolean = false,
     val passMessage: String? = null,
@@ -34,6 +40,8 @@ data class BookingDetailUiState(
 class BookingDetailViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val repository: BookingRepository,
+    private val razorpayResultBus: RazorpayResultBus,
+    @Named("razorpayKeyId") val razorpayKeyId: String,
 ) : ViewModel() {
 
     val bookingId: String = checkNotNull(savedStateHandle["bookingId"]) { "bookingId is required" }
@@ -41,7 +49,12 @@ class BookingDetailViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(BookingDetailUiState())
     val uiState: StateFlow<BookingDetailUiState> = _uiState.asStateFlow()
 
-    init { refresh() }
+    init {
+        refresh()
+        viewModelScope.launch {
+            razorpayResultBus.results.collect { result -> onCheckoutResult(result) }
+        }
+    }
 
     fun refresh() {
         _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
@@ -81,26 +94,96 @@ class BookingDetailViewModel @Inject constructor(
     }
 
     /**
-     * Starts a payment order for this booking (Milestone 7). Does not — and,
-     * without a real gateway SDK integrated client-side, cannot — actually
-     * collect a card here; it surfaces whatever the backend reports
-     * (typically "Online payments are temporarily unavailable" in this
-     * build, since no live gateway credentials exist anywhere in this
-     * environment). See BookingRepository.createPaymentOrder's doc comment.
+     * Starts a payment order for this booking, then — if a Razorpay key_id
+     * is configured in this build (see NetworkConfigModule) — signals the
+     * screen to actually launch Razorpay Checkout for it via
+     * readyToLaunchCheckoutForOrderId. If no key is configured, this
+     * honestly reports the gateway as unavailable rather than opening a
+     * checkout sheet that could never succeed (same "no fakes" rule as
+     * every other unconfigured integration in this codebase).
      */
     fun payNow() {
         _uiState.value = _uiState.value.copy(paymentInProgress = true, paymentMessage = null)
         viewModelScope.launch {
             when (val result = repository.createPaymentOrder(bookingId)) {
-                is BookingActionResult.Success -> _uiState.value = _uiState.value.copy(
-                    paymentInProgress = false,
-                    paymentOrder = result.value,
-                    paymentMessage = "Payment order ${result.value.status.lowercase()}. Gateway checkout isn't wired into this build yet.",
-                )
+                is BookingActionResult.Success -> {
+                    val order = result.value
+                    _uiState.value = _uiState.value.copy(
+                        paymentInProgress = false,
+                        paymentOrder = order,
+                        paymentMessage = when {
+                            razorpayKeyId.isBlank() ->
+                                "Payment order ${order.status.lowercase()}. Online checkout isn't configured in this build yet."
+                            order.gatewayOrderId.isNullOrBlank() ->
+                                "Payment order ${order.status.lowercase()}, but the gateway didn't return a checkout order."
+                            else -> null
+                        },
+                        readyToLaunchCheckoutForOrderId =
+                            order.id.takeIf { razorpayKeyId.isNotBlank() && !order.gatewayOrderId.isNullOrBlank() },
+                    )
+                }
                 is BookingActionResult.Error -> _uiState.value = _uiState.value.copy(
                     paymentInProgress = false,
                     paymentMessage = result.message,
                 )
+            }
+        }
+    }
+
+    /** Called by the screen right after it hands the order off to Checkout.open(), so it isn't relaunched on recomposition. */
+    fun onCheckoutLaunched() {
+        _uiState.value = _uiState.value.copy(readyToLaunchCheckoutForOrderId = null)
+    }
+
+    private fun onCheckoutResult(result: RazorpayCheckoutResult) {
+        val order = _uiState.value.paymentOrder ?: return
+        when (result) {
+            is RazorpayCheckoutResult.Success -> {
+                if (result.razorpayOrderId != null && result.razorpayOrderId != order.gatewayOrderId) return
+                _uiState.value = _uiState.value.copy(paymentMessage = "Payment submitted — confirming with the bank…")
+                pollUntilSettled(order.id)
+            }
+            is RazorpayCheckoutResult.Failure -> {
+                _uiState.value = _uiState.value.copy(
+                    paymentMessage = result.description?.takeIf { it.isNotBlank() } ?: "Payment was not completed.",
+                )
+            }
+        }
+    }
+
+    /**
+     * Razorpay's client-side success callback isn't itself proof of payment
+     * — the backend only marks a PaymentOrder SUCCESSFUL once Razorpay's
+     * signed webhook confirms it server-side (payments.service.ts). This
+     * polls the order a few times to reflect that real status once it
+     * lands, rather than trusting the client callback directly.
+     */
+    private fun pollUntilSettled(paymentOrderId: String) {
+        viewModelScope.launch {
+            repeat(8) { attempt ->
+                delay(2000)
+                when (val result = repository.getPayment(paymentOrderId)) {
+                    is BookingActionResult.Success -> {
+                        _uiState.value = _uiState.value.copy(paymentOrder = result.value)
+                        if (result.value.status == "SUCCESSFUL" || result.value.status == "FAILED") {
+                            _uiState.value = _uiState.value.copy(
+                                paymentMessage = if (result.value.status == "SUCCESSFUL") {
+                                    "Payment successful."
+                                } else {
+                                    "Payment failed. You can try again."
+                                },
+                            )
+                            if (result.value.status == "SUCCESSFUL") refresh()
+                            return@launch
+                        }
+                    }
+                    is BookingActionResult.Error -> Unit
+                }
+                if (attempt == 7) {
+                    _uiState.value = _uiState.value.copy(
+                        paymentMessage = "Still confirming your payment — check back in a moment.",
+                    )
+                }
             }
         }
     }

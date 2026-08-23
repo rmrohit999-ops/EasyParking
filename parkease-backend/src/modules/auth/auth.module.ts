@@ -5,10 +5,11 @@ import { PasswordService } from './services/password.service';
 import { TokenService } from './services/token.service';
 import { OtpService } from './services/otp.service';
 import { GoogleAuthService } from './services/google-auth.service';
+import { AccountLockoutService } from './services/account-lockout.service';
 
 @Module({
   controllers: [AuthController],
-  providers: [AuthService, PasswordService, TokenService, OtpService, GoogleAuthService],
+  providers: [AuthService, PasswordService, TokenService, OtpService, GoogleAuthService, AccountLockoutService],
   // Exported so GuardsModule (JwtAuthGuard needs TokenService) and other
   // domain modules (e.g. password re-verification before a sensitive
   // action) can reuse these without redefining them.

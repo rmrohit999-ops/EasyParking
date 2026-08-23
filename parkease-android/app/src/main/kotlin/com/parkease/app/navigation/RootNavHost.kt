@@ -4,14 +4,25 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import android.content.Intent
+import android.net.Uri
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -37,6 +48,9 @@ import com.parkease.feature.vehicles.VehiclesRoutes
 import com.parkease.feature.vehicles.vehiclesGraph
 
 private const val ROLE_HOME_ROUTE = "role-home"
+
+/** Same page as feature:auth's RegisterScreen links to, at #privacy / #terms. */
+private const val LEGAL_URL = "https://claude.ai/code/artifact/f5ce0140-a291-4052-a126-482dee0b6246"
 
 /**
  * Root of the navigation graph. Starts at the auth graph (feature:auth,
@@ -65,7 +79,11 @@ private const val ROLE_HOME_ROUTE = "role-home"
 @Composable
 fun RootNavHost(modifier: Modifier = Modifier, viewModel: RootNavViewModel = hiltViewModel()) {
     val isLoggedIn by viewModel.isLoggedIn.collectAsStateWithLifecycle()
+    val becomeOwnerState by viewModel.becomeOwnerState.collectAsStateWithLifecycle()
+    val deleteAccountState by viewModel.deleteAccountState.collectAsStateWithLifecycle()
+    var showDeleteAccountConfirm by remember { mutableStateOf(false) }
     val navController = rememberNavController()
+    val context = LocalContext.current
 
     LaunchedEffect(isLoggedIn) {
         val onAuthGraph = navController.currentDestination?.hierarchy?.any { it.route == AuthRoutes.GRAPH } == true
@@ -100,6 +118,29 @@ fun RootNavHost(modifier: Modifier = Modifier, viewModel: RootNavViewModel = hil
                     Button(onClick = { navController.navigate(VehiclesRoutes.GRAPH) }) {
                         Text("My Vehicles")
                     }
+                    Button(
+                        onClick = { viewModel.becomeOwner() },
+                        enabled = becomeOwnerState !is BecomeOwnerState.InProgress,
+                    ) {
+                        if (becomeOwnerState is BecomeOwnerState.InProgress) {
+                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                        } else {
+                            Text("Become an Owner")
+                        }
+                    }
+                    when (val state = becomeOwnerState) {
+                        is BecomeOwnerState.Success -> Text(
+                            "You're now an owner — add a parking listing below.",
+                            color = MaterialTheme.colorScheme.primary,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        is BecomeOwnerState.Error -> Text(
+                            state.message,
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        else -> {}
+                    }
                     Button(onClick = { navController.navigate(OwnerParkingRoutes.GRAPH) }) {
                         Text("My Parking Listings")
                     }
@@ -121,7 +162,55 @@ fun RootNavHost(modifier: Modifier = Modifier, viewModel: RootNavViewModel = hil
                     Button(onClick = { viewModel.signOut() }) {
                         Text("Sign out")
                     }
+                    Button(onClick = {
+                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("$LEGAL_URL#privacy")))
+                    }) {
+                        Text("Privacy Policy & Terms")
+                    }
+                    OutlinedButton(
+                        onClick = { showDeleteAccountConfirm = true },
+                        enabled = deleteAccountState !is DeleteAccountState.InProgress,
+                    ) {
+                        if (deleteAccountState is DeleteAccountState.InProgress) {
+                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                        } else {
+                            Text("Delete account", color = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                    (deleteAccountState as? DeleteAccountState.Error)?.let { state ->
+                        Text(
+                            state.message,
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
                 }
+            }
+            if (showDeleteAccountConfirm) {
+                AlertDialog(
+                    onDismissRequest = { showDeleteAccountConfirm = false },
+                    title = { Text("Delete your account?") },
+                    text = {
+                        Text(
+                            "This permanently removes your profile, email, and phone number. " +
+                                "It can't be undone. Bookings and payment records are kept for " +
+                                "legal/financial record-keeping but are no longer linked to you.",
+                        )
+                    },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            showDeleteAccountConfirm = false
+                            viewModel.deleteAccount()
+                        }) {
+                            Text("Delete", color = MaterialTheme.colorScheme.error)
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showDeleteAccountConfirm = false }) {
+                            Text("Cancel")
+                        }
+                    },
+                )
             }
         }
         vehiclesGraph(navController)

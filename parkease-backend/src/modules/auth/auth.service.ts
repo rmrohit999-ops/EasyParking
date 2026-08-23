@@ -11,6 +11,7 @@ import { PasswordService } from './services/password.service';
 import { TokenService } from './services/token.service';
 import { OtpService } from './services/otp.service';
 import { GoogleAuthService } from './services/google-auth.service';
+import { AccountLockoutService } from './services/account-lockout.service';
 import {
   ChangePasswordDto,
   ForgotPasswordDto,
@@ -22,7 +23,7 @@ import {
   ResetPasswordDto,
 } from './dto/auth.dto';
 
-interface TokenPair {
+export interface TokenPair {
   accessToken: string;
   refreshToken: string;
   expiresInSeconds: number;
@@ -36,6 +37,7 @@ export class AuthService {
     private readonly tokenService: TokenService,
     private readonly otpService: OtpService,
     private readonly googleAuthService: GoogleAuthService,
+    private readonly accountLockoutService: AccountLockoutService,
   ) {}
 
   // ---------------------------------------------------------------------
@@ -77,15 +79,26 @@ export class AuthService {
     if (!dto.email || !dto.password) {
       throw new UnauthorizedException('Incorrect email or password.');
     }
+
+    // Per-account lockout, on top of ThrottleGuard's per-IP limit on this
+    // route — an IP-only limit is bypassable by rotating source IPs, so
+    // this counts failed attempts against the target account itself.
+    await this.accountLockoutService.assertNotLocked(dto.email);
+
     const user = await this.prisma.user.findUnique({ where: { email: dto.email } });
     // Deliberately identical error for "no such user" and "wrong password"
     // so the endpoint doesn't leak account existence (Milestone 0 T1).
     if (!user || !user.password_hash || user.status !== 'ACTIVE') {
+      await this.accountLockoutService.recordFailedAttempt(dto.email);
       throw new UnauthorizedException('Incorrect email or password.');
     }
     const valid = await this.passwordService.verify(user.password_hash, dto.password);
-    if (!valid) throw new UnauthorizedException('Incorrect email or password.');
+    if (!valid) {
+      await this.accountLockoutService.recordFailedAttempt(dto.email);
+      throw new UnauthorizedException('Incorrect email or password.');
+    }
 
+    await this.accountLockoutService.clearFailedAttempts(dto.email);
     return this.issueSessionAndTokens(user.id, req);
   }
 

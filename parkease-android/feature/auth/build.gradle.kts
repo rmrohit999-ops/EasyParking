@@ -33,6 +33,7 @@ dependencies {
     implementation(libs.androidx.compose.material3)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.retrofit.core) // for retrofit2.HttpException in error mapping
+    implementation(libs.moshi.kotlin) // to parse the server's ApiErrorBody for friendly error messages
 
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
