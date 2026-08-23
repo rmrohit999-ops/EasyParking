@@ -1,0 +1,1396 @@
+// =============================================================================
+// ParkEase — Prisma schema
+// Implements the full entity model from Milestone 0 (00_ARCHITECTURE.md §5).
+//
+// Conventions:
+//  - Primary keys are UUIDv7 (time-sortable, non-enumerable) via `@default(uuid(7))`.
+//  - Field names are snake_case and map 1:1 to column names (no @map noise
+//    across ~50 models); this is a deliberate Milestone 1 convention choice,
+//    not an oversight — camelCase mapping can be introduced later if desired.
+//  - Monetary values are always BigInt minor units (paise) + a separate
+//    currency column. Never Decimal/Float. See src/common/money/money.ts.
+//  - Money-bearing and state-machine tables are append-only where the
+//    architecture doc calls for immutability (transactions, booking_events,
+//    audit_logs, settlement history) — enforced at the service layer in
+//    later milestones; the schema itself has no UPDATE-blocking trigger yet.
+//  - Many "who did this" columns (reviewed_by, approved_by, granted_by,
+//    actor_id, etc.) are intentionally plain String scalars, not Prisma
+//    relations to User — enforcing a formal FK on every audit-style pointer
+//    would put 30+ back-relations on the User model for little benefit at
+//    this stage. Referential integrity for the *primary* domain relations
+//    (who owns this vehicle/listing/booking) is enforced via real relations.
+//  - `Unsupported("geography(Point,4326)")` models the PostGIS geography
+//    column; the GiST index on it is added by hand-editing the generated
+//    migration (see prisma/migrations/.../migration.sql) since Prisma
+//    cannot express spatial index types natively.
+// =============================================================================
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [postgis]
+}
+
+// =============================================================================
+// Enums
+// =============================================================================
+
+enum AppRole {
+  DRIVER
+  OWNER
+  ATTENDANT
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  DELETED
+}
+
+enum VehicleCategory {
+  TWO_WHEELER
+  FOUR_WHEELER
+  OTHER_SUPPORTED
+  UNSUPPORTED_PENDING_REVIEW
+}
+
+enum VehicleType {
+  BIKE
+  SCOOTER
+  CAR
+  SUV
+  EV
+  OTHER
+}
+
+enum VehicleSize {
+  SMALL
+  MEDIUM
+  LARGE
+  EXTRA_LARGE
+}
+
+enum VehicleStatus {
+  ACTIVE
+  REMOVED
+}
+
+enum OwnerVerificationStatus {
+  NOT_STARTED
+  SUBMITTED
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  NEEDS_MORE_INFORMATION
+  SUSPENDED
+}
+
+enum PayoutMethod {
+  BANK
+  UPI
+}
+
+enum PayoutVerificationStatus {
+  NOT_STARTED
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum ParkingType {
+  INDIVIDUAL
+  RESIDENTIAL
+  APARTMENT
+  COMMERCIAL
+  OFFICE
+  MALL
+  OTHER
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  NEEDS_MORE_INFORMATION
+  SUSPENDED
+}
+
+enum ListingStatus {
+  ACTIVE
+  PAUSED
+  CLOSED
+}
+
+enum PhotoType {
+  LISTING
+  ENTRANCE
+  SECTION
+}
+
+enum MediaStatus {
+  ACTIVE
+  REMOVED
+}
+
+enum SpaceStatus {
+  AVAILABLE
+  RESERVED
+  OCCUPIED
+  BLOCKED
+  MAINTENANCE
+  INACTIVE
+}
+
+enum BookingType {
+  ADVANCE
+  INSTANT
+}
+
+enum BookingStatus {
+  PENDING_PAYMENT
+  CONFIRMED
+  DRIVER_ARRIVING
+  CHECKED_IN
+  PARKING_ACTIVE
+  CHECKED_OUT
+  COMPLETED
+  REJECTED
+  EXPIRED
+  CANCELLED
+  NO_SHOW
+  VEHICLE_MISMATCH
+  PARKING_UNAVAILABLE
+  ADMIN_CANCELLED
+}
+
+enum BookingActorSource {
+  APP
+  ATTENDANT_APP
+  ADMIN
+  SYSTEM_JOB
+  WEBHOOK
+}
+
+enum MismatchResolution {
+  REJECTED_ENTRY
+  RECATEGORIZED_WITH_PAYMENT_DIFF
+  ADMIN_OVERRIDE
+}
+
+enum PaymentOrderStatus {
+  PENDING
+  PROCESSING
+  SUCCESSFUL
+  FAILED
+}
+
+enum PaymentMethod {
+  ONLINE
+  CASH
+}
+
+enum TransactionPaymentStatus {
+  PENDING
+  PROCESSING
+  SUCCESSFUL
+  FAILED
+  REFUNDED
+  PARTIALLY_REFUNDED
+}
+
+enum RefundType {
+  FULL
+  PARTIAL
+  NONE
+}
+
+enum RefundReasonCode {
+  CATEGORY_MISMATCH
+  PARKING_UNAVAILABLE
+  ADMIN_APPROVED
+  CANCELLATION_POLICY
+  OTHER
+}
+
+enum RefundStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum AdjustmentType {
+  REFUND
+  CORRECTION
+  CHARGEBACK
+  FEE_REVERSAL
+}
+
+enum PolicyScope {
+  GLOBAL
+  PARKING
+  SECTION
+  VEHICLE_CATEGORY
+  OWNER
+  PROMOTION
+}
+
+enum EarningsStatus {
+  PENDING
+  AVAILABLE
+  PROCESSING
+  SETTLED
+  FAILED
+  ADJUSTED
+  REVERSED
+}
+
+enum SettlementStatus {
+  PENDING
+  PROCESSING
+  SETTLED
+  FAILED
+  REVERSED
+}
+
+enum QrPassStatus {
+  ACTIVE
+  USED
+  EXPIRED
+  REVOKED
+}
+
+enum CheckEventType {
+  CHECK_IN
+  CHECK_OUT
+}
+
+enum VerificationOutcome {
+  OK
+  CATEGORY_MISMATCH
+  VEHICLE_NUMBER_MISMATCH
+  EXPIRED
+  ALREADY_USED
+}
+
+enum ReviewStatus {
+  ACTIVE
+  FLAGGED
+  REMOVED
+}
+
+enum NotificationChannel {
+  PUSH
+  SMS
+  EMAIL
+}
+
+enum FraudSubjectType {
+  USER
+  LISTING
+  REVIEW
+  BOOKING
+}
+
+enum FraudAlertStatus {
+  OPEN
+  UNDER_REVIEW
+  DISMISSED
+  ACTION_TAKEN
+}
+
+enum SupportTicketStatus {
+  OPEN
+  IN_PROGRESS
+  WAITING_FOR_USER
+  RESOLVED
+  CLOSED
+  REOPENED
+}
+
+enum DisputeStatus {
+  OPEN
+  UNDER_REVIEW
+  RESOLVED
+  REJECTED
+}
+
+enum EvidenceType {
+  PHOTO
+  CHECK_EVENT
+  QR_SCAN
+  PAYMENT_REF
+  LOCATION_RECORD
+  MESSAGE
+}
+
+enum EvidenceVisibility {
+  ADMIN_ONLY
+  PARTIES
+}
+
+// =============================================================================
+// 5.1 Identity & roles
+// =============================================================================
+
+model User {
+  id                 String    @id @default(uuid(7))
+  phone              String?   @unique
+  email              String?   @unique
+  phone_verified_at  DateTime?
+  email_verified_at  DateTime?
+  password_hash      String?
+  google_subject_id  String?   @unique
+  profile_photo_url  String?
+  status             UserStatus @default(ACTIVE)
+  created_at         DateTime  @default(now())
+  updated_at         DateTime  @updatedAt
+
+  roles                UserRoleAssignment[]
+  sessions             Session[]
+  admin_permissions    AdminPermission[]
+  driver_profile       DriverProfile?
+  owner_profile        OwnerProfile?
+  attendant_profile    AttendantProfile?
+  vehicles             Vehicle[]
+  bookings             Booking[]
+  notification_devices NotificationDevice[]
+  notifications        Notification[]
+  notification_prefs   NotificationPreference[]
+  support_tickets      SupportTicket[]
+  support_messages     SupportMessage[]
+  favorite_listings    FavoriteListing[]
+
+  @@index([status])
+  @@map("users")
+}
+
+model UserRoleAssignment {
+  id          String    @id @default(uuid(7))
+  user_id     String
+  user        User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  role        AppRole
+  granted_by  String?
+  granted_at  DateTime  @default(now())
+  status      UserStatus @default(ACTIVE)
+
+  @@unique([user_id, role])
+  @@index([role])
+  @@map("user_roles")
+}
+
+model Session {
+  id                 String    @id @default(uuid(7))
+  user_id            String
+  user               User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  refresh_token_hash String
+  device_id          String?
+  device_info        String?
+  ip_address         String?
+  user_agent         String?
+  issued_at          DateTime  @default(now())
+  expires_at         DateTime
+  revoked_at         DateTime?
+
+  @@index([user_id])
+  @@index([expires_at])
+  @@map("sessions")
+}
+
+model OtpChallenge {
+  id                String    @id @default(uuid(7))
+  phone_or_email    String
+  purpose           String // LOGIN | REGISTER | RESET_PASSWORD
+  code_hash         String
+  attempt_count     Int       @default(0)
+  expires_at        DateTime
+  consumed_at       DateTime?
+  request_ip        String?
+  created_at        DateTime  @default(now())
+
+  @@index([phone_or_email, purpose])
+  @@map("otp_challenges")
+}
+
+model AdminPermission {
+  id             String   @id @default(uuid(7))
+  user_id        String
+  user           User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  permission_key String
+  granted_by     String?
+  granted_at     DateTime @default(now())
+
+  @@unique([user_id, permission_key])
+  @@map("admin_permissions")
+}
+
+// =============================================================================
+// 5.2 Drivers & vehicles
+// =============================================================================
+
+model DriverProfile {
+  id                  String   @id @default(uuid(7))
+  user_id             String   @unique
+  user                User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  default_vehicle_id  String?  @unique
+  default_vehicle     Vehicle? @relation("DefaultVehicle", fields: [default_vehicle_id], references: [id])
+  licence_number      String? // encrypted at rest at the application layer
+  licence_verified_at DateTime?
+  created_at          DateTime @default(now())
+  updated_at          DateTime @updatedAt
+
+  @@map("driver_profiles")
+}
+
+model Vehicle {
+  id                  String          @id @default(uuid(7))
+  driver_id           String
+  driver              User            @relation(fields: [driver_id], references: [id], onDelete: Cascade)
+  category            VehicleCategory
+  vehicle_type        VehicleType
+  size                VehicleSize?
+  registration_number String
+  make                String?
+  model               String?
+  is_default          Boolean         @default(false)
+  status              VehicleStatus   @default(ACTIVE)
+  created_at          DateTime        @default(now())
+  updated_at          DateTime        @updatedAt
+
+  default_for_driver DriverProfile? @relation("DefaultVehicle")
+  bookings           Booking[]
+  booking_holds      BookingHold[]
+
+  @@unique([driver_id, registration_number])
+  @@index([driver_id, is_default])
+  @@index([registration_number])
+  @@index([category])
+  @@map("vehicles")
+}
+
+// =============================================================================
+// 5.3 Owners & KYC
+// =============================================================================
+
+model OwnerProfile {
+  id                    String                  @id @default(uuid(7))
+  user_id               String                  @unique
+  user                  User                    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  business_name         String?
+  parking_type_default  ParkingType?
+  verification_status   OwnerVerificationStatus @default(NOT_STARTED)
+  verified_at           DateTime?
+  verified_by           String?
+  created_at            DateTime                @default(now())
+  updated_at            DateTime                @updatedAt
+
+  kyc_documents   OwnerKycDocument[]
+  payout_accounts OwnerPayoutAccount[]
+  parking_listings ParkingListing[]
+  earnings_ledger OwnerEarningsLedgerEntry[]
+  settlements     Settlement[]
+
+  @@index([verification_status])
+  @@map("owner_profiles")
+}
+
+model OwnerKycDocument {
+  id             String    @id @default(uuid(7))
+  owner_id       String
+  owner          OwnerProfile @relation(fields: [owner_id], references: [id], onDelete: Cascade)
+  document_type  String
+  storage_key    String // private bucket only
+  status         String    @default("SUBMITTED")
+  reviewed_by    String?
+  reviewed_at    DateTime?
+  created_at     DateTime  @default(now())
+
+  @@index([owner_id])
+  @@map("owner_kyc_documents")
+}
+
+model OwnerPayoutAccount {
+  id                          String                    @id @default(uuid(7))
+  owner_id                    String
+  owner                       OwnerProfile              @relation(fields: [owner_id], references: [id], onDelete: Cascade)
+  method                      PayoutMethod
+  account_holder_name         String
+  bank_account_number_encrypted String?
+  ifsc                        String?
+  upi_vpa_encrypted           String?
+  verification_status         PayoutVerificationStatus @default(NOT_STARTED)
+  is_primary                  Boolean                   @default(false)
+  created_at                  DateTime                  @default(now())
+  updated_at                  DateTime                  @updatedAt
+
+  settlements Settlement[]
+
+  @@index([owner_id])
+  @@map("owner_payout_accounts")
+}
+
+// =============================================================================
+// 5.4 Attendants
+// =============================================================================
+
+model AttendantProfile {
+  id                String   @id @default(uuid(7))
+  user_id           String   @unique
+  user              User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  employer_owner_id String? // nullable: ADMIN-managed if null (see Milestone 0 §18 open question)
+  status            UserStatus @default(ACTIVE)
+  created_at        DateTime @default(now())
+  updated_at        DateTime @updatedAt
+
+  assignments AttendantAssignment[]
+
+  @@map("attendant_profiles")
+}
+
+model AttendantAssignment {
+  id                   String    @id @default(uuid(7))
+  attendant_id         String
+  attendant            AttendantProfile @relation(fields: [attendant_id], references: [id], onDelete: Cascade)
+  parking_id           String
+  parking              ParkingListing   @relation(fields: [parking_id], references: [id], onDelete: Cascade)
+  authorized_categories VehicleCategory[]
+  assigned_by          String?
+  assigned_at          DateTime  @default(now())
+  revoked_at           DateTime?
+
+  @@index([attendant_id])
+  @@index([parking_id])
+  @@map("attendant_assignments")
+}
+
+// =============================================================================
+// 5.5 Parking & sections
+// =============================================================================
+
+model ParkingListing {
+  id              String          @id @default(uuid(7))
+  owner_id        String
+  owner           OwnerProfile    @relation(fields: [owner_id], references: [id])
+  name            String
+  parking_type    ParkingType
+  description     String?
+  approval_status ApprovalStatus  @default(PENDING)
+  status          ListingStatus   @default(PAUSED)
+  timezone        String          @default("Asia/Kolkata")
+  created_at      DateTime        @default(now())
+  updated_at      DateTime        @updatedAt
+
+  location             ParkingLocation?
+  photos               ParkingPhoto[]
+  sections             ParkingSection[]
+  attendant_assignments AttendantAssignment[]
+  bookings             Booking[]
+  favorited_by         FavoriteListing[]
+
+  @@index([owner_id])
+  @@index([approval_status, status])
+  @@map("parking_listings")
+}
+
+model ParkingLocation {
+  id                       String   @id @default(uuid(7))
+  parking_id               String   @unique
+  parking                  ParkingListing @relation(fields: [parking_id], references: [id], onDelete: Cascade)
+  latitude                 Float
+  longitude                Float
+  geog                     Unsupported("geography(Point,4326)")?
+  address_line             String
+  city                     String
+  state                    String
+  postal_code              String
+  entrance_notes           String?
+  location_accuracy_meters Float?
+  last_updated_by          String?
+  last_updated_at          DateTime @default(now())
+
+  @@map("parking_locations")
+}
+
+model ParkingPhoto {
+  id          String      @id @default(uuid(7))
+  parking_id  String
+  parking     ParkingListing @relation(fields: [parking_id], references: [id], onDelete: Cascade)
+  section_id  String?
+  section     ParkingSection? @relation(fields: [section_id], references: [id], onDelete: Cascade)
+  photo_type  PhotoType
+  storage_key String
+  uploaded_by String?
+  uploaded_at DateTime    @default(now())
+  status      MediaStatus @default(ACTIVE)
+
+  photo_hash PhotoHash?
+
+  @@index([parking_id])
+  @@index([section_id])
+  @@map("parking_photos")
+}
+
+model ParkingSection {
+  id                    String          @id @default(uuid(7))
+  parking_id            String
+  parking               ParkingListing  @relation(fields: [parking_id], references: [id], onDelete: Cascade)
+  name                  String
+  vehicle_category      VehicleCategory
+  supported_vehicle_types VehicleType[]
+  capacity              Int
+  is_covered            Boolean         @default(false)
+  has_security           Boolean         @default(false)
+  has_cctv              Boolean         @default(false)
+  has_ev_charging        Boolean         @default(false)
+  instant_mode_enabled   Boolean         @default(false)
+  // Base rate — added in Milestone 5 (driver discovery) to close a gap in
+  // the Milestone 0 ERD, which modeled Booking.price_snapshot (a frozen
+  // breakdown) but never the section-level rate it's computed from.
+  // Integer minor units (paise), matching the Money type convention used
+  // everywhere else (Milestone 1 §money.ts) — never a float. Full pricing
+  // logic (surge, cancellation-policy interaction, GST/commission split)
+  // is Milestone 7 (Payments); this is only the base rate a listing search
+  // result and a booking price calculation both read from.
+  currency               String          @default("INR")
+  hourly_rate_minor_units Int
+  operating_hours        Json? // per-weekday open/close
+  status                 ListingStatus   @default(PAUSED)
+  approval_status        ApprovalStatus  @default(PENDING)
+  location_notes         String?
+  created_at             DateTime        @default(now())
+  updated_at             DateTime        @updatedAt
+
+  rules              ParkingSectionRule[]
+  spaces             ParkingSpace[]
+  photos             ParkingPhoto[]
+  availability       SectionAvailability?
+  booking_holds      BookingHold[]
+  bookings           Booking[]
+  check_events       CheckEvent[]
+  convertible_as_a   ConvertibleSpaceRule[] @relation("SectionA")
+  convertible_as_b   ConvertibleSpaceRule[] @relation("SectionB")
+
+  @@index([parking_id, vehicle_category])
+  @@map("parking_sections")
+}
+
+model ParkingSectionRule {
+  id         String         @id @default(uuid(7))
+  section_id String
+  section    ParkingSection @relation(fields: [section_id], references: [id], onDelete: Cascade)
+  rule_type  String
+  rule_value Json
+
+  @@index([section_id])
+  @@map("parking_section_rules")
+}
+
+model ParkingSpace {
+  id                   String         @id @default(uuid(7))
+  section_id           String
+  section              ParkingSection @relation(fields: [section_id], references: [id], onDelete: Cascade)
+  space_label          String
+  size                 VehicleSize?
+  length_cm            Int?
+  width_cm             Int?
+  height_clearance_cm  Int?
+  weight_limit_kg      Int?
+  is_ev_capable        Boolean        @default(false)
+  is_covered           Boolean        @default(false)
+  is_accessible        Boolean        @default(false)
+  status               SpaceStatus    @default(AVAILABLE)
+  active               Boolean        @default(true)
+  created_at           DateTime       @default(now())
+  updated_at           DateTime       @updatedAt
+
+  @@unique([section_id, space_label])
+  @@index([section_id, status])
+  @@map("parking_spaces")
+}
+
+/// Existence of a row is the ONLY sanctioned way capacity may move between
+/// two sections/categories — always Admin-approved, always audited.
+model ConvertibleSpaceRule {
+  id            String         @id @default(uuid(7))
+  section_a_id  String
+  section_a     ParkingSection @relation("SectionA", fields: [section_a_id], references: [id])
+  section_b_id  String
+  section_b     ParkingSection @relation("SectionB", fields: [section_b_id], references: [id])
+  approved_by   String
+  approved_at   DateTime       @default(now())
+  active        Boolean        @default(true)
+
+  @@map("convertible_space_rules")
+}
+
+// =============================================================================
+// 5.6 Availability & occupancy
+// =============================================================================
+
+model SectionAvailability {
+  section_id      String         @id
+  section         ParkingSection @relation(fields: [section_id], references: [id], onDelete: Cascade)
+  capacity        Int
+  reserved_count  Int            @default(0)
+  occupied_count  Int            @default(0)
+  blocked_count   Int            @default(0)
+  version         Int            @default(0)
+  updated_at      DateTime       @updatedAt
+
+  @@map("section_availability")
+}
+
+model BookingHold {
+  id               String          @id @default(uuid(7))
+  section_id       String
+  section          ParkingSection  @relation(fields: [section_id], references: [id])
+  vehicle_category VehicleCategory
+  driver_id        String
+  // Added in Milestone 6 (booking) — a hold reserves capacity for a
+  // specific vehicle, not just a category, so confirm-to-booking never has
+  // to ask the driver to re-pick it (and can't silently drift to a
+  // different, possibly now-incompatible, vehicle in between).
+  vehicle_id       String
+  vehicle          Vehicle         @relation(fields: [vehicle_id], references: [id])
+  quantity         Int             @default(1)
+  expires_at       DateTime
+  released_at      DateTime?
+  booking_id       String?         @unique
+  booking          Booking?        @relation(fields: [booking_id], references: [id])
+  created_at       DateTime        @default(now())
+
+  @@index([section_id])
+  @@index([expires_at, released_at])
+  @@map("booking_holds")
+}
+
+// =============================================================================
+// 5.7 Bookings
+// =============================================================================
+
+model Booking {
+  id                   String          @id @default(uuid(7))
+  driver_id            String
+  driver               User            @relation(fields: [driver_id], references: [id])
+  vehicle_id           String
+  vehicle              Vehicle         @relation(fields: [vehicle_id], references: [id])
+  parking_id           String
+  parking              ParkingListing  @relation(fields: [parking_id], references: [id])
+  section_id           String
+  section              ParkingSection  @relation(fields: [section_id], references: [id])
+  vehicle_category     VehicleCategory // denormalized snapshot at booking time
+  booking_type         BookingType
+  status               BookingStatus   @default(PENDING_PAYMENT)
+  start_time           DateTime?
+  end_time             DateTime?
+  actual_check_in_at   DateTime?
+  actual_check_out_at  DateTime?
+  price_snapshot       Json // frozen full price breakdown
+  policy_snapshot      Json // frozen policy version references
+  created_at           DateTime        @default(now())
+  updated_at           DateTime        @updatedAt
+
+  hold                 BookingHold?
+  events               BookingEvent[]
+  mismatch_events      VehicleMismatchEvent[]
+  payment_orders       PaymentOrder[]
+  transactions         Transaction[]
+  cash_collections     CashCollection[]
+  refunds              Refund[]
+  qr_pass              QrPass?
+  check_events         CheckEvent[]
+  review               Review?
+  owner_driver_rating  OwnerDriverRating?
+  disputes             Dispute[]
+  earnings_ledger      OwnerEarningsLedgerEntry[]
+
+  @@index([driver_id, status])
+  @@index([section_id, status, start_time])
+  @@index([status, created_at])
+  @@map("bookings")
+}
+
+model BookingEvent {
+  id          String             @id @default(uuid(7))
+  booking_id  String
+  booking     Booking            @relation(fields: [booking_id], references: [id], onDelete: Cascade)
+  actor_id    String?
+  actor_role  AppRole?
+  source      BookingActorSource
+  old_status  BookingStatus?
+  new_status  BookingStatus
+  reason      String?
+  metadata    Json?
+  created_at  DateTime           @default(now())
+
+  @@index([booking_id])
+  @@map("booking_events")
+}
+
+model VehicleMismatchEvent {
+  id                          String              @id @default(uuid(7))
+  booking_id                  String
+  booking                     Booking             @relation(fields: [booking_id], references: [id], onDelete: Cascade)
+  reported_by                 String
+  original_category           VehicleCategory
+  actual_category             VehicleCategory
+  original_vehicle_id         String
+  actual_vehicle_registration String
+  resolution                  MismatchResolution?
+  price_diff_amount           BigInt?
+  created_at                  DateTime            @default(now())
+
+  @@index([booking_id])
+  @@map("vehicle_mismatch_events")
+}
+
+// =============================================================================
+// 5.8 Payments & ledger
+// =============================================================================
+
+model PaymentOrder {
+  id              String             @id @default(uuid(7))
+  booking_id      String
+  booking         Booking            @relation(fields: [booking_id], references: [id])
+  driver_id       String
+  gateway         String
+  gateway_order_id String?
+  amount          BigInt
+  currency        String             @default("INR") @db.Char(3)
+  status          PaymentOrderStatus @default(PENDING)
+  idempotency_key String             @unique
+  created_at      DateTime           @default(now())
+  updated_at      DateTime           @updatedAt
+
+  gateway_events PaymentGatewayEvent[]
+
+  @@index([booking_id])
+  @@map("payment_orders")
+}
+
+model PaymentGatewayEvent {
+  id                 String        @id @default(uuid(7))
+  payment_order_id   String?
+  payment_order      PaymentOrder? @relation(fields: [payment_order_id], references: [id])
+  gateway            String
+  event_type         String
+  gateway_event_id   String
+  raw_payload        Json // secrets redacted before storage
+  signature_verified Boolean
+  processed_at       DateTime?
+  correlation_id     String?
+  created_at         DateTime      @default(now())
+
+  @@unique([gateway, gateway_event_id])
+  @@index([payment_order_id])
+  @@map("payment_gateway_events")
+}
+
+/// The ledger. Immutable after creation — corrections are TransactionAdjustment rows.
+model Transaction {
+  id                   String                    @id @default(uuid(7))
+  booking_id           String
+  booking              Booking                   @relation(fields: [booking_id], references: [id])
+  driver_id            String
+  owner_id             String
+  parking_id           String
+  section_id           String
+  vehicle_id           String
+  vehicle_category     VehicleCategory
+  vehicle_type         VehicleType
+  parking_amount       BigInt
+  platform_fee         BigInt
+  commission_amount    BigInt
+  tax_amount           BigInt
+  driver_total         BigInt
+  owner_gross          BigInt
+  owner_net            BigInt
+  payment_method       PaymentMethod
+  gateway              String?
+  gateway_transaction_id String?
+  payment_status       TransactionPaymentStatus @default(PENDING)
+  booking_status_at_time BookingStatus
+  refund_status        String?
+  settlement_status     String?
+  currency             String                    @default("INR") @db.Char(3)
+  idempotency_key       String                    @unique
+  created_at            DateTime                  @default(now())
+
+  adjustments      TransactionAdjustment[]
+  refunds          Refund[]
+  earnings_ledger  OwnerEarningsLedgerEntry[]
+
+  @@index([owner_id, created_at])
+  @@index([booking_id])
+  @@index([gateway_transaction_id])
+  @@map("transactions")
+}
+
+model TransactionAdjustment {
+  id             String         @id @default(uuid(7))
+  transaction_id String
+  transaction    Transaction    @relation(fields: [transaction_id], references: [id])
+  adjustment_type AdjustmentType
+  amount         BigInt
+  reason         String
+  created_by     String?
+  created_at     DateTime       @default(now())
+
+  @@index([transaction_id])
+  @@map("transaction_adjustments")
+}
+
+model CashCollection {
+  id                  String   @id @default(uuid(7))
+  booking_id          String
+  booking             Booking  @relation(fields: [booking_id], references: [id])
+  collected_by        String
+  amount              BigInt
+  confirmed_at        DateTime?
+  confirmation_method String?
+  audit_note          String?
+  created_at          DateTime @default(now())
+
+  @@index([booking_id])
+  @@map("cash_collections")
+}
+
+model Refund {
+  id                String           @id @default(uuid(7))
+  transaction_id    String
+  transaction       Transaction      @relation(fields: [transaction_id], references: [id])
+  booking_id        String
+  booking           Booking          @relation(fields: [booking_id], references: [id])
+  refund_type       RefundType
+  reason_code       RefundReasonCode
+  amount            BigInt
+  status            RefundStatus     @default(PENDING)
+  gateway_refund_id String?
+  initiated_by      String?
+  approved_by       String?
+  created_at        DateTime         @default(now())
+  completed_at      DateTime?
+
+  @@index([transaction_id])
+  @@index([booking_id])
+  @@index([status])
+  @@map("refunds")
+}
+
+// =============================================================================
+// 5.9 Commission/tax configuration (versioned; scope_ref_id is a polymorphic
+// pointer whose meaning depends on `scope` — not a Prisma relation).
+// =============================================================================
+
+model CommissionPolicy {
+  id                 String      @id @default(uuid(7))
+  scope              PolicyScope
+  scope_ref_id       String?
+  commission_percent Float
+  fixed_fee          BigInt      @default(0)
+  min_commission     BigInt      @default(0)
+  effective_from     DateTime    @default(now())
+  effective_to       DateTime?
+  created_by         String?
+  created_at         DateTime    @default(now())
+
+  @@index([scope, scope_ref_id, effective_from])
+  @@map("commission_policies")
+}
+
+model TaxPolicy {
+  id             String      @id @default(uuid(7))
+  scope          PolicyScope
+  scope_ref_id   String?
+  tax_type       String      @default("GST")
+  rate_percent   Float
+  inclusive      Boolean     @default(false)
+  effective_from DateTime    @default(now())
+  effective_to   DateTime?
+  created_by     String?
+  created_at     DateTime    @default(now())
+
+  @@index([scope, scope_ref_id, effective_from])
+  @@map("tax_policies")
+}
+
+model CancellationPolicy {
+  id             String      @id @default(uuid(7))
+  scope          PolicyScope
+  scope_ref_id   String?
+  rules          Json // time-based refund tiers
+  effective_from DateTime    @default(now())
+  effective_to   DateTime?
+  created_by     String?
+  created_at     DateTime    @default(now())
+
+  @@index([scope, scope_ref_id, effective_from])
+  @@map("cancellation_policies")
+}
+
+// =============================================================================
+// 5.10 Owner earnings & settlements
+// =============================================================================
+
+model OwnerEarningsLedgerEntry {
+  id               String         @id @default(uuid(7))
+  owner_id         String
+  owner            OwnerProfile   @relation(fields: [owner_id], references: [id])
+  parking_id       String
+  section_id       String
+  vehicle_category VehicleCategory
+  booking_id       String
+  booking          Booking        @relation(fields: [booking_id], references: [id])
+  transaction_id   String
+  transaction      Transaction    @relation(fields: [transaction_id], references: [id])
+  amount           BigInt
+  status           EarningsStatus @default(PENDING)
+  created_at       DateTime       @default(now())
+
+  settlement_item SettlementItem?
+
+  @@index([owner_id, status])
+  @@map("owner_earnings_ledger")
+}
+
+model Settlement {
+  id                String           @id @default(uuid(7))
+  owner_id          String
+  owner             OwnerProfile     @relation(fields: [owner_id], references: [id])
+  requested_amount  BigInt
+  status            SettlementStatus @default(PENDING)
+  payout_account_id String
+  payout_account    OwnerPayoutAccount @relation(fields: [payout_account_id], references: [id])
+  gateway_payout_id String?
+  requested_at      DateTime         @default(now())
+  processed_at      DateTime?
+
+  items SettlementItem[]
+
+  @@index([owner_id, status])
+  @@map("settlements")
+}
+
+/// Unique per earning — this is what makes "no duplicate payouts" structural.
+model SettlementItem {
+  id                          String                   @id @default(uuid(7))
+  settlement_id               String
+  settlement                  Settlement               @relation(fields: [settlement_id], references: [id])
+  owner_earnings_ledger_id    String                   @unique
+  owner_earnings_ledger_entry OwnerEarningsLedgerEntry @relation(fields: [owner_earnings_ledger_id], references: [id])
+
+  @@map("settlement_items")
+}
+
+// =============================================================================
+// 5.11 QR & check-in
+// =============================================================================
+
+model QrPass {
+  id           String       @id @default(uuid(7))
+  booking_id   String       @unique
+  booking      Booking      @relation(fields: [booking_id], references: [id], onDelete: Cascade)
+  payload_hash String // QR encodes a signed reference to this row's id, not raw booking data
+  issued_at    DateTime     @default(now())
+  expires_at   DateTime
+  used_at      DateTime?
+  status       QrPassStatus @default(ACTIVE)
+
+  check_events CheckEvent[]
+
+  @@map("qr_passes")
+}
+
+model CheckEvent {
+  id                  String              @id @default(uuid(7))
+  booking_id          String
+  booking             Booking             @relation(fields: [booking_id], references: [id])
+  qr_pass_id          String
+  qr_pass             QrPass              @relation(fields: [qr_pass_id], references: [id])
+  event_type          CheckEventType
+  attendant_id        String?
+  parking_id          String
+  section_id          String
+  section             ParkingSection      @relation(fields: [section_id], references: [id])
+  verification_outcome VerificationOutcome
+  device_metadata     Json?
+  created_at          DateTime            @default(now())
+
+  @@index([booking_id, event_type])
+  @@map("check_events")
+}
+
+// =============================================================================
+// 5.12 Reviews
+// =============================================================================
+
+model Review {
+  id         String       @id @default(uuid(7))
+  booking_id String       @unique
+  booking    Booking      @relation(fields: [booking_id], references: [id])
+  driver_id  String
+  parking_id String
+  ratings    Json // cleanliness / security / location / overall
+  comment    String?
+  created_at DateTime     @default(now())
+  status     ReviewStatus @default(ACTIVE)
+
+  @@index([parking_id])
+  @@map("reviews")
+}
+
+model OwnerDriverRating {
+  id         String   @id @default(uuid(7))
+  booking_id String   @unique
+  booking    Booking  @relation(fields: [booking_id], references: [id])
+  owner_id   String
+  driver_id  String
+  rating     Int
+  comment    String?
+  created_at DateTime @default(now())
+
+  @@map("owner_driver_ratings")
+}
+
+// =============================================================================
+// 5.13 Notifications
+// =============================================================================
+
+model NotificationDevice {
+  id           String    @id @default(uuid(7))
+  user_id      String
+  user         User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  fcm_token    String    @unique
+  platform     String    @default("ANDROID")
+  last_seen_at DateTime  @default(now())
+  revoked_at   DateTime?
+
+  @@index([user_id])
+  @@map("notification_devices")
+}
+
+model Notification {
+  id         String   @id @default(uuid(7))
+  user_id    String
+  user       User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  type       String
+  title      String
+  body       String
+  deep_link  String?
+  data       Json?
+  read_at    DateTime?
+  created_at DateTime @default(now())
+
+  @@index([user_id, read_at])
+  @@map("notifications")
+}
+
+model NotificationPreference {
+  id       String              @id @default(uuid(7))
+  user_id  String
+  user     User                @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  category String
+  channel  NotificationChannel
+  enabled  Boolean             @default(true)
+
+  @@unique([user_id, category, channel])
+  @@map("notification_preferences")
+}
+
+// =============================================================================
+// 5.14 Fraud
+// =============================================================================
+
+model FraudSignal {
+  id           String           @id @default(uuid(7))
+  subject_type FraudSubjectType
+  subject_id   String
+  signal_type  String
+  score        Float
+  explanation  Json // must be human-readable, never a black box
+  computed_at  DateTime         @default(now())
+
+  alerts FraudAlert[]
+
+  @@index([subject_type, subject_id])
+  @@map("fraud_signals")
+}
+
+model FraudAlert {
+  id              String            @id @default(uuid(7))
+  fraud_signal_id String
+  fraud_signal    FraudSignal       @relation(fields: [fraud_signal_id], references: [id])
+  status          FraudAlertStatus  @default(OPEN)
+  reviewed_by     String?
+  reviewed_at     DateTime?
+  action_taken    String?
+
+  @@index([status])
+  @@map("fraud_alerts")
+}
+
+model PhotoHash {
+  id                String       @id @default(uuid(7))
+  parking_photo_id  String       @unique
+  parking_photo     ParkingPhoto @relation(fields: [parking_photo_id], references: [id], onDelete: Cascade)
+  perceptual_hash   String
+  matched_photo_ids String[]
+  created_at        DateTime     @default(now())
+
+  @@index([perceptual_hash])
+  @@map("photo_hashes")
+}
+
+// =============================================================================
+// 5.15 Support & disputes
+// =============================================================================
+
+model SupportTicket {
+  id                 String              @id @default(uuid(7))
+  user_id            String
+  user               User                @relation(fields: [user_id], references: [id])
+  category           String
+  subject            String
+  description        String
+  status             SupportTicketStatus @default(OPEN)
+  assigned_to        String?
+  related_booking_id String?
+  created_at         DateTime            @default(now())
+  updated_at         DateTime            @updatedAt
+
+  messages SupportMessage[]
+
+  @@index([status, assigned_to])
+  @@map("support_tickets")
+}
+
+model SupportMessage {
+  id          String        @id @default(uuid(7))
+  ticket_id   String
+  ticket      SupportTicket @relation(fields: [ticket_id], references: [id], onDelete: Cascade)
+  sender_id   String
+  sender      User          @relation(fields: [sender_id], references: [id])
+  sender_role AppRole
+  message     String
+  attachments String[]
+  created_at  DateTime      @default(now())
+
+  @@index([ticket_id])
+  @@map("support_messages")
+}
+
+model Dispute {
+  id           String        @id @default(uuid(7))
+  booking_id   String
+  booking      Booking       @relation(fields: [booking_id], references: [id])
+  filed_by     String
+  dispute_type String
+  status       DisputeStatus @default(OPEN)
+  resolution   String?
+  resolved_by  String?
+  created_at   DateTime      @default(now())
+  resolved_at  DateTime?
+
+  evidence DisputeEvidence[]
+
+  @@index([booking_id])
+  @@index([status])
+  @@map("disputes")
+}
+
+model DisputeEvidence {
+  id            String             @id @default(uuid(7))
+  dispute_id    String
+  dispute       Dispute            @relation(fields: [dispute_id], references: [id], onDelete: Cascade)
+  evidence_type EvidenceType
+  storage_key   String?
+  reference_id  String?
+  added_by      String?
+  added_at      DateTime           @default(now())
+  visibility    EvidenceVisibility @default(ADMIN_ONLY)
+
+  @@index([dispute_id])
+  @@map("dispute_evidence")
+}
+
+// =============================================================================
+// 5.16 Platform/admin
+// =============================================================================
+
+model ServiceArea {
+  id         String   @id @default(uuid(7))
+  name       String
+  boundary   Unsupported("geography(Polygon,4326)")?
+  status     String   @default("ACTIVE")
+  created_by String?
+  created_at DateTime @default(now())
+
+  @@map("service_areas")
+}
+
+// Added in Milestone 5 (driver discovery) — the Milestone 0 ERD didn't
+// include favorites; this fills that gap. Keyed off User.id directly
+// (like Vehicle.driver_id) rather than DriverProfile.id, since
+// DriverProfile is an optional profile row nothing currently
+// auto-creates — requiring it here would block favoriting on an
+// unrelated, unpopulated table.
+model FavoriteListing {
+  id         String         @id @default(uuid(7))
+  driver_id  String
+  driver     User           @relation(fields: [driver_id], references: [id], onDelete: Cascade)
+  parking_id String
+  parking    ParkingListing @relation(fields: [parking_id], references: [id], onDelete: Cascade)
+  created_at DateTime       @default(now())
+
+  @@unique([driver_id, parking_id])
+  @@index([driver_id])
+  @@map("favorite_listings")
+}
+
+model FeatureFlag {
+  id                String   @id @default(uuid(7))
+  key               String   @unique
+  description       String?
+  enabled_globally  Boolean  @default(false)
+  rollout_rules     Json? // role / service-area / percentage
+  updated_at        DateTime @updatedAt
+
+  @@map("feature_flags")
+}
+
+/// Append-only. No update/delete API is ever exposed for this table.
+model AuditLog {
+  id            String   @id @default(uuid(7))
+  actor_id      String?
+  actor_role    AppRole?
+  action        String
+  target_type   String
+  target_id     String
+  before_state  Json?
+  after_state   Json?
+  ip_address    String?
+  correlation_id String?
+  created_at    DateTime @default(now())
+
+  @@index([target_type, target_id, created_at])
+  @@index([actor_id, created_at])
+  @@map("audit_logs")
+}
+
+model ConfigSetting {
+  id          String   @id @default(uuid(7))
+  key         String
+  value       Json
+  environment String
+  updated_by  String?
+  updated_at  DateTime @updatedAt
+
+  @@unique([key, environment])
+  @@map("config_settings")
+}

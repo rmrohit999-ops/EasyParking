@@ -1,0 +1,86 @@
+name: backend-ci
+
+on:
+  push:
+    paths:
+      - 'parkease-backend/**'
+      - '.github/workflows/backend-ci.yml'
+  pull_request:
+    paths:
+      - 'parkease-backend/**'
+      - '.github/workflows/backend-ci.yml'
+
+defaults:
+  run:
+    working-directory: parkease-backend
+
+jobs:
+  lint-typecheck-unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: parkease-backend/package-lock.json
+      - run: npm ci
+      - run: npx prisma validate
+      - run: npx prisma generate
+      - run: npm run lint
+      - run: npm run build
+      - run: npm test -- --coverage
+
+  integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: parkease
+          POSTGRES_PASSWORD: parkease
+          POSTGRES_DB: parkease
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U parkease -d parkease"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://parkease:parkease@localhost:5432/parkease?schema=public
+      REDIS_URL: redis://localhost:6379
+      APP_BASE_URL: http://localhost:3000
+      JWT_ACCESS_SECRET: ci-only-secret-value-not-real
+      JWT_REFRESH_SECRET: ci-only-secret-value-not-real-2
+      STORAGE_BUCKET_PUBLIC: parkease-public
+      STORAGE_BUCKET_PRIVATE: parkease-private
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: parkease-backend/package-lock.json
+      - run: npm ci
+      - run: npx prisma migrate deploy
+      - run: npm run test:integration
+
+  dependency-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: parkease-backend/package-lock.json
+      - run: npm ci
+      - run: npm audit --audit-level=high

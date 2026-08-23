@@ -1,0 +1,45 @@
+version: 2
+
+# Milestone 12 (release hardening): automated dependency-update PRs and
+# (once the corresponding dependency graph is submitted — npm's
+# package-lock.json for the backend, gradle/actions/dependency-submission
+# for Android, see android-ci.yml's dependency-scan job) the security
+# alerts that ride along with each ecosystem entry below. Weekly rather
+# than daily: this is an MVP with a small team, and a daily flood of
+# version-bump PRs would just get ignored rather than reviewed.
+
+updates:
+  - package-ecosystem: 'npm'
+    directory: '/parkease-backend'
+    schedule:
+      interval: 'weekly'
+    open-pull-requests-limit: 10
+    groups:
+      # Patch/minor bumps across @nestjs/* land together — reviewing forty
+      # near-identical single-package PRs a week is worse for security
+      # response time than reviewing one grouped PR, and a major bump
+      # (which needs real review) is deliberately excluded from the group.
+      nestjs:
+        patterns:
+          - '@nestjs/*'
+        update-types:
+          - 'minor'
+          - 'patch'
+
+  - package-ecosystem: 'gradle'
+    directory: '/parkease-android'
+    schedule:
+      interval: 'weekly'
+    open-pull-requests-limit: 10
+
+  - package-ecosystem: 'github-actions'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+    open-pull-requests-limit: 10
+
+  - package-ecosystem: 'docker'
+    directory: '/parkease-backend'
+    schedule:
+      interval: 'weekly'
+    open-pull-requests-limit: 5

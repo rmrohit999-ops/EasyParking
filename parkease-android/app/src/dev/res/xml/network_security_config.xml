@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Dev-flavor-only override of ../../main/res/xml/network_security_config.xml
+  (Android resource merging picks this one for dev builds, main's stays in
+  effect for staging/prod). Permits cleartext HTTP to a single named local
+  IP so a debug build can reach a backend running on a developer's own
+  machine over LAN during manual device testing — never a blanket
+  cleartext allowance, and never applied outside the dev flavor.
+
+  This IP is whoever's LAN address the backend happens to be running on at
+  build time; update it (or point back at a real https:// dev API in
+  app/build.gradle.kts's dev flavor block) as that changes.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">192.168.1.5</domain>
+    </domain-config>
+</network-security-config>

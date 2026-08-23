@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Production/staging: HTTPS only, no cleartext, no user-added CAs trusted.
+  Dev flavor override (values-dev variant, added when the dev backend needs
+  a local/emulator HTTP endpoint) will relax this narrowly and only for the
+  dev applicationIdSuffix build — never for staging/prod.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

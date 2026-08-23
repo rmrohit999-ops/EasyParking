@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!--
+      Placeholder launcher glyph: a blocky "P" for ParkEase. Unblocks the
+      build (AndroidManifest.xml references @mipmap/ic_launcher, but no
+      launcher icon resource existed at all in this codebase). Go-Live
+      Checklist item "design a real app icon" replaces this before launch.
+    -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M34,24 L46,24 L46,84 L34,84 Z
+                           M46,24 L74,24 L74,34 L46,34 Z
+                           M64,24 L74,24 L74,54 L64,54 Z
+                           M46,44 L74,44 L74,54 L46,54 Z" />
+</vector>

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      Brand palette per Milestone 0 (green / white / blue / black). Final
+      token set belongs to core-ui's design system (Milestone 5+ as real
+      screens are built); these are placeholder seed values so the app
+      module has a themeable color right now.
+    -->
+    <color name="parkease_green">#1B8A5A</color>
+    <color name="parkease_blue">#1257D6</color>
+    <color name="parkease_black">#101418</color>
+    <color name="parkease_white">#FFFFFF</color>
+</resources>

@@ -1,0 +1,88 @@
+name: android-ci
+
+on:
+  push:
+    paths:
+      - 'parkease-android/**'
+      - '.github/workflows/android-ci.yml'
+  pull_request:
+    paths:
+      - 'parkease-android/**'
+      - '.github/workflows/android-ci.yml'
+
+defaults:
+  run:
+    working-directory: parkease-android
+
+jobs:
+  # core-model is pure Kotlin — no Android SDK needed, fastest feedback loop.
+  core-model-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - run: ./gradlew :core:core-model:test
+
+  lint-and-unit-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+      - run: ./gradlew lintDevDebug
+      - run: ./gradlew testDevDebugUnitTest
+
+  assemble:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+      - run: ./gradlew assembleDevDebug assembleStagingDebug
+
+  # Instrumented UI tests need a real/emulated device — deferred to the
+  # milestone that first has real screens/interactions to test (Milestone 5+).
+  # A reusable-workflow job (android-emulator-runner) will be added then.
+
+  # Milestone 12: submits this module's real resolved Gradle dependency
+  # graph to GitHub's Dependency Graph API — the same mechanism npm's
+  # package-lock.json gives GitHub for free, Gradle needs an explicit
+  # submission step for. Once submitted, Dependabot security alerts (see
+  # .github/dependabot.yml at the repo root for the update-PR side of that)
+  # start covering every Gradle dependency here too, not just npm's in the
+  # backend. Deliberately not the OWASP dependency-check Gradle plugin the
+  # earlier placeholder named: that plugin needs its own NVD API key and a
+  # large, slow local vulnerability-database sync to be reliable in CI —
+  # this action needs neither and is officially GitHub-maintained.
+  dependency-scan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+      - uses: gradle/actions/dependency-submission@v4
+        with:
+          # `defaults.run.working-directory` above only applies to `run:`
+          # shell steps, not to this action — the Gradle project root has
+          # to be told explicitly since it's not the repo root.
+          build-root-directory: parkease-android
