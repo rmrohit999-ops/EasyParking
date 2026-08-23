@@ -36,7 +36,7 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
       - uses: gradle/actions/setup-gradle@v4
       - run: ./gradlew lintDevDebug
       - run: ./gradlew testDevDebugUnitTest
@@ -50,7 +50,7 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
       - uses: gradle/actions/setup-gradle@v4
       - run: ./gradlew assembleDevDebug assembleStagingDebug
 
@@ -79,7 +79,7 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
       - uses: gradle/actions/dependency-submission@v4
         with:
           # `defaults.run.working-directory` above only applies to `run:`
