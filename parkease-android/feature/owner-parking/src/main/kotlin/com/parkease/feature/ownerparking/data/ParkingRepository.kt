@@ -178,7 +178,20 @@ class ParkingRepository @Inject constructor(
             .url(presigned.uploadUrl)
             .put(bytes.toRequestBody(contentType.toMediaType()))
             .build()
-        uploadHttpClient.newCall(request).execute().use { response ->
+        // uploadHttpClient's shared timeouts (15s connect / 20s read, OkHttp's
+        // default 10s write) are tuned for small JSON API calls — a real
+        // phone-camera JPEG is commonly several MB, which can easily exceed a
+        // 10s write timeout on an ordinary mobile connection, failing the
+        // upload with nothing more specific than "something went wrong."
+        // Widened here, per-call, rather than raising the shared client's
+        // timeouts globally (which also backs the token-refresh call, where a
+        // short timeout is the right behavior).
+        val uploadClient = uploadHttpClient.newBuilder()
+            .connectTimeout(20, java.util.concurrent.TimeUnit.SECONDS)
+            .writeTimeout(120, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+            .build()
+        uploadClient.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
                 throw UploadFailedException("The photo upload didn't complete. Please try again.")
             }
