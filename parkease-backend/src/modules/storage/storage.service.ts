@@ -75,7 +75,12 @@ export class S3StorageService implements StorageService {
     this.client = new S3Client({
       region: storage.region,
       endpoint: storage.endpoint || undefined,
-      forcePathStyle: storage.provider === 'MINIO' || Boolean(storage.endpoint),
+      // Path-style (endpoint/bucket/key) is a MinIO-specific need (matches
+      // the local docker-compose setup). Other S3-compatible providers
+      // with a custom endpoint — e.g. Railway's bucket storage (Tigris),
+      // which only accepts virtual-host-style (bucket.endpoint/key) —
+      // must NOT be forced into path-style, or every presigned URL 403s.
+      forcePathStyle: storage.provider === 'MINIO',
       credentials: {
         accessKeyId: storage.accessKeyId,
         secretAccessKey: storage.secretAccessKey,
