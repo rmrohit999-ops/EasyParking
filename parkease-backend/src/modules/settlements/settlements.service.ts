@@ -73,7 +73,7 @@ export class SettlementsService {
       return created;
     });
 
-    return toSettlementView(settlement);
+    return this.processSettlement(settlement.id);
   }
 
   async listOwnSettlements(ownerUserId: string) {

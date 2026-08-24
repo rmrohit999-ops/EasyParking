@@ -4,6 +4,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { OwnershipResolver } from '../../common/guards/resource-ownership.guard';
 import { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import { STORAGE_SERVICE, StorageService, buildStorageKey } from '../storage/storage.service';
+import { AuditService } from '../audit/audit.service';
 import {
   AssignAttendantDto,
   CreateListingDto,
@@ -24,6 +25,7 @@ export class ParkingService {
   constructor(
     private readonly prisma: PrismaService,
     @Inject(STORAGE_SERVICE) private readonly storage: StorageService,
+    private readonly auditService: AuditService,
   ) {}
 
   // ---------------------------------------------------------------------
@@ -151,7 +153,15 @@ export class ParkingService {
 
     const updated = await this.prisma.parkingListing.update({
       where: { id: listingId },
-      data: { approval_status: ApprovalStatus.PENDING },
+      data: { approval_status: ApprovalStatus.APPROVED },
+    });
+    await this.auditService.record({
+      actorId: null,
+      actorRole: null,
+      action: 'AUTO_APPROVE_LISTING',
+      targetType: 'ParkingListing',
+      targetId: listingId,
+      afterState: { approvalStatus: 'APPROVED' },
     });
     return toListingSummary(updated);
   }
@@ -177,6 +187,7 @@ export class ParkingService {
           instant_mode_enabled: dto.instantModeEnabled ?? false,
           operating_hours: dto.operatingHours as Prisma.InputJsonValue | undefined,
           location_notes: dto.locationNotes,
+          approval_status: ApprovalStatus.APPROVED,
         },
       });
       // A section is meaningless for booking without its capacity counter —
