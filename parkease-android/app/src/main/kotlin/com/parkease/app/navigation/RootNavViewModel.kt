@@ -45,6 +45,14 @@ class RootNavViewModel @Inject constructor(
     private val _becomeOwnerState = MutableStateFlow<BecomeOwnerState>(BecomeOwnerState.Idle)
     val becomeOwnerState: StateFlow<BecomeOwnerState> = _becomeOwnerState.asStateFlow()
 
+    private val _roleIntent = MutableStateFlow<RoleIntent?>(null)
+    val roleIntent: StateFlow<RoleIntent?> = _roleIntent.asStateFlow()
+
+    /** Set when a Welcome-screen card is tapped — routing only, see RoleIntent's doc comment. */
+    fun setRoleIntent(intent: RoleIntent) {
+        _roleIntent.value = intent
+    }
+
     /**
      * Wires up UsersApi.becomeOwner (POST /v1/users/me/roles/owner) — the
      * endpoint existed and worked from Milestone 2, but no screen ever
@@ -52,6 +60,11 @@ class RootNavViewModel @Inject constructor(
      * without a manual database role grant. JwtAuthGuard re-checks roles
      * from the DB on every request, so the very next API call after this
      * succeeds already sees OWNER — no re-login needed.
+     *
+     * Now called proactively (not just from an explicit button) whenever
+     * an authenticated user lands on the Owner home via RoleIntent.OWN, so
+     * it must be idempotent: a 409 ("already an owner") is the expected,
+     * successful outcome on every visit after the first, not an error.
      */
     fun becomeOwner() {
         if (_becomeOwnerState.value is BecomeOwnerState.InProgress) return
@@ -64,6 +77,8 @@ class RootNavViewModel @Inject constructor(
                 } else {
                     BecomeOwnerState.Error("Something went wrong. Please try again.")
                 }
+            } catch (e: retrofit2.HttpException) {
+                if (e.code() == 409) BecomeOwnerState.Success else BecomeOwnerState.Error("Something went wrong. Please try again.")
             } catch (e: Exception) {
                 BecomeOwnerState.Error("Something went wrong. Please try again.")
             }
@@ -112,6 +127,12 @@ class RootNavViewModel @Inject constructor(
 
     private val _deleteAccountState = MutableStateFlow<DeleteAccountState>(DeleteAccountState.Idle)
     val deleteAccountState: StateFlow<DeleteAccountState> = _deleteAccountState.asStateFlow()
+
+    fun clearDeleteAccountError() {
+        if (_deleteAccountState.value is DeleteAccountState.Error) {
+            _deleteAccountState.value = DeleteAccountState.Idle
+        }
+    }
 
     /**
      * Called only after the caller (RootNavHost) has shown an explicit

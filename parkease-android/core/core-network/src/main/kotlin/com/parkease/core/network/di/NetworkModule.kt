@@ -1,5 +1,6 @@
 package com.parkease.core.network.di
 
+import com.parkease.core.network.api.AdminApi
 import com.parkease.core.network.api.AttendantApi
 import com.parkease.core.network.api.AuthApi
 import com.parkease.core.network.api.BookingApi
@@ -173,6 +174,10 @@ object NetworkModule {
     @Provides
     @Singleton
     fun provideNotificationsApi(retrofit: Retrofit): NotificationsApi = retrofit.create(NotificationsApi::class.java)
+
+    @Provides
+    @Singleton
+    fun provideAdminApi(retrofit: Retrofit): AdminApi = retrofit.create(AdminApi::class.java)
 
     // NOTE: AuthInterceptor and TokenAuthenticator are NOT provided here —
     // both have an @Inject constructor (see interceptor/), so Hilt
