@@ -14,8 +14,12 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import java.io.IOException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
 import javax.inject.Inject
 import javax.inject.Singleton
+import javax.net.ssl.SSLException
 
 data class ListingUi(
     val id: String,
@@ -191,10 +195,27 @@ class ParkingRepository @Inject constructor(
             .writeTimeout(120, java.util.concurrent.TimeUnit.SECONDS)
             .readTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
             .build()
-        uploadClient.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) {
-                throw UploadFailedException("The photo upload didn't complete. Please try again.")
+        // The PUT step previously fell into runCatchingApi's generic
+        // catch-all on any failure, showing the same "Something went wrong"
+        // text whether the cause was a slow connection, a DNS failure, or a
+        // TLS problem — indistinguishable from the user's side and from our
+        // backend logs (which only ever see the upload-url call, never a
+        // failure detail for the direct-to-storage PUT). Naming the failure
+        // mode here surfaces it in the UI so the next report is diagnostic.
+        try {
+            uploadClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    throw UploadFailedException("The photo upload didn't complete (server responded ${response.code}). Please try again.")
+                }
             }
+        } catch (e: SocketTimeoutException) {
+            throw UploadFailedException("The upload timed out. Please try again on a stronger connection.")
+        } catch (e: UnknownHostException) {
+            throw UploadFailedException("Couldn't reach the photo server — please check your internet connection.")
+        } catch (e: SSLException) {
+            throw UploadFailedException("A secure connection to the photo server couldn't be established. Please try again.")
+        } catch (e: IOException) {
+            throw UploadFailedException("The photo upload failed (${e.javaClass.simpleName}). Please try again.")
         }
 
         val registered = parkingApi.registerPhoto(listingId, RegisterPhotoRequest(presigned.storageKey, photoType, sectionId))
