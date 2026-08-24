@@ -20,7 +20,6 @@ CMD ["npm", "run", "start:dev"]
 FROM deps AS build
 COPY . .
 RUN npm run build
-RUN ls -la /app/dist && test -f /app/dist/main.js
 
 # ---- prod: minimal runtime image --------------------------------------------
 FROM base AS prod
@@ -32,4 +31,4 @@ COPY --from=build /app/prisma ./prisma
 COPY --from=build /app/node_modules/.prisma ./node_modules/.prisma
 EXPOSE 3000
 USER node
-CMD ["node", "dist/main.js"]
+CMD ["node", "dist/src/main.js"]
