@@ -1,8 +1,10 @@
 package com.parkease.feature.admin.data
 
+import com.parkease.core.model.Money
 import com.parkease.core.network.api.AdminApi
 import com.parkease.core.network.model.AdminRejectRequest
 import com.parkease.core.network.model.SuspendUserRequest
+import java.math.BigInteger
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -28,6 +30,24 @@ data class PendingListingUi(
     val name: String,
     val parkingType: String,
     val approvalStatus: String,
+)
+
+data class CashByOwnerUi(
+    val ownerId: String,
+    val label: String,
+    val transactionCount: Int,
+    val totalCollected: Money,
+    val commission: Money,
+    val netEarnings: Money,
+)
+
+data class CashSummaryUi(
+    val totalCollected: Money,
+    val totalCommission: Money,
+    val totalOwnerNet: Money,
+    val completedCount: Int,
+    val pendingCount: Int,
+    val byOwner: List<CashByOwnerUi>,
 )
 
 sealed class AdminResult<out T> {
@@ -74,6 +94,27 @@ class AdminRepository @Inject constructor(
     suspend fun rejectListing(listingId: String, reason: String): AdminResult<Unit> = runCatchingApi {
         adminApi.rejectListing(listingId, AdminRejectRequest(reason))
         Unit
+    }
+
+    suspend fun cashSummary(): AdminResult<CashSummaryUi> = runCatchingApi {
+        val r = adminApi.cashSummary()
+        CashSummaryUi(
+            totalCollected = Money(BigInteger(r.totalCashCollectedMinorUnits), r.currency),
+            totalCommission = Money(BigInteger(r.totalCommissionMinorUnits), r.currency),
+            totalOwnerNet = Money(BigInteger(r.totalOwnerNetMinorUnits), r.currency),
+            completedCount = r.completedCount,
+            pendingCount = r.pendingCount,
+            byOwner = r.byOwner.map {
+                CashByOwnerUi(
+                    ownerId = it.ownerId,
+                    label = it.businessName ?: it.email ?: it.phone ?: "Owner",
+                    transactionCount = it.transactionCount,
+                    totalCollected = Money(BigInteger(it.totalCashCollectedMinorUnits), r.currency),
+                    commission = Money(BigInteger(it.commissionMinorUnits), r.currency),
+                    netEarnings = Money(BigInteger(it.netEarningsMinorUnits), r.currency),
+                )
+            },
+        )
     }
 
     private inline fun <T> runCatchingApi(block: () -> T): AdminResult<T> = try {

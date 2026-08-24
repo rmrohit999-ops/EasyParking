@@ -3,6 +3,7 @@ package com.parkease.feature.booking.ui
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.parkease.core.model.BookingStatus
 import com.parkease.core.network.payments.RazorpayCheckoutResult
 import com.parkease.core.network.payments.RazorpayResultBus
 import com.parkease.feature.booking.data.BookingActionResult
@@ -10,6 +11,7 @@ import com.parkease.feature.booking.data.BookingRepository
 import com.parkease.feature.booking.data.BookingUi
 import com.parkease.feature.booking.data.PassUi
 import com.parkease.feature.booking.data.PaymentOrderUi
+import com.parkease.feature.booking.data.QuoteUi
 import com.parkease.feature.booking.data.RefundUi
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.delay
@@ -34,6 +36,8 @@ data class BookingDetailUiState(
     val passLoading: Boolean = false,
     val passMessage: String? = null,
     val refunds: List<RefundUi> = emptyList(),
+    val quote: QuoteUi? = null,
+    val cashInProgress: Boolean = false,
 )
 
 @HiltViewModel
@@ -60,10 +64,24 @@ class BookingDetailViewModel @Inject constructor(
         _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
         viewModelScope.launch {
             when (val result = repository.getBooking(bookingId)) {
-                is BookingActionResult.Success -> _uiState.value = _uiState.value.copy(isLoading = false, booking = result.value)
+                is BookingActionResult.Success -> {
+                    _uiState.value = _uiState.value.copy(isLoading = false, booking = result.value)
+                    // The quote (Parking Fee / Total Payable) is only meaningful
+                    // while payment is still pending — once paid, the booking's
+                    // own cashAmount/paymentOrder already shows what was
+                    // actually charged, which is what matters at that point.
+                    if (result.value.status == BookingStatus.PENDING_PAYMENT) loadQuote()
+                }
                 is BookingActionResult.Error -> _uiState.value = _uiState.value.copy(isLoading = false, errorMessage = result.message)
             }
             loadRefunds()
+        }
+    }
+
+    private suspend fun loadQuote() {
+        when (val result = repository.getQuote(bookingId)) {
+            is BookingActionResult.Success -> _uiState.value = _uiState.value.copy(quote = result.value)
+            is BookingActionResult.Error -> Unit // Secondary display concern — Pay Now/Pay with Cash still work without it.
         }
     }
 
@@ -126,6 +144,25 @@ class BookingDetailViewModel @Inject constructor(
                     paymentInProgress = false,
                     paymentMessage = result.message,
                 )
+            }
+        }
+    }
+
+    /**
+     * Driver taps "Pay with Cash" — records intent server-side (notifying
+     * both sides) and refreshes so the screen switches to the "Cash
+     * Payment Pending" state. Booking status itself doesn't change here;
+     * it only moves to CONFIRMED once the owner/attendant actually
+     * confirms cash in hand.
+     */
+    fun payWithCash() {
+        _uiState.value = _uiState.value.copy(cashInProgress = true, paymentMessage = null)
+        viewModelScope.launch {
+            when (val result = repository.payCash(bookingId)) {
+                is BookingActionResult.Success -> {
+                    _uiState.value = _uiState.value.copy(cashInProgress = false, booking = result.value)
+                }
+                is BookingActionResult.Error -> _uiState.value = _uiState.value.copy(cashInProgress = false, paymentMessage = result.message)
             }
         }
     }

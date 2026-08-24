@@ -9,10 +9,12 @@ import androidx.navigation.navArgument
 import com.parkease.feature.booking.ui.BookingConfirmScreen
 import com.parkease.feature.booking.ui.BookingDetailScreen
 import com.parkease.feature.booking.ui.MyBookingsScreen
+import com.parkease.feature.booking.ui.OwnerBookingsScreen
 
 object BookingRoutes {
     const val GRAPH = "booking"
     const val LIST = "booking/list"
+    const val OWNER_LIST = "booking/owner-list"
     const val CONFIRM_PATTERN = "booking/confirm/{sectionId}/{isInstant}"
     const val DETAIL_PATTERN = "booking/detail/{bookingId}"
 
@@ -34,6 +36,9 @@ fun NavGraphBuilder.bookingGraph(navController: NavController) {
                 onOpenBooking = { bookingId -> navController.navigate(BookingRoutes.detail(bookingId)) },
                 onBack = { navController.popBackStack() },
             )
+        }
+        composable(BookingRoutes.OWNER_LIST) {
+            OwnerBookingsScreen(onBack = { navController.popBackStack() })
         }
         composable(
             route = BookingRoutes.CONFIRM_PATTERN,

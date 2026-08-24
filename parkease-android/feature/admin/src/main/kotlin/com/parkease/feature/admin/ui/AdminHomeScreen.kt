@@ -8,6 +8,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CurrencyRupee
 import androidx.compose.material.icons.filled.PeopleAlt
 import androidx.compose.material.icons.filled.PendingActions
 import androidx.compose.material3.*
@@ -25,6 +26,7 @@ import com.parkease.feature.admin.data.DashboardSummaryUi
 fun AdminHomeScreen(
     onOpenUsers: () -> Unit,
     onOpenPendingListings: () -> Unit,
+    onOpenCashSummary: () -> Unit,
     onSignOut: () -> Unit,
     viewModel: AdminHomeViewModel = hiltViewModel(),
 ) {
@@ -46,6 +48,7 @@ fun AdminHomeScreen(
                     summary = uiState.summary,
                     onOpenUsers = onOpenUsers,
                     onOpenPendingListings = onOpenPendingListings,
+                    onOpenCashSummary = onOpenCashSummary,
                 )
             }
         }
@@ -74,6 +77,7 @@ private fun AdminHomeContent(
     summary: DashboardSummaryUi?,
     onOpenUsers: () -> Unit,
     onOpenPendingListings: () -> Unit,
+    onOpenCashSummary: () -> Unit,
 ) {
     Column(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
@@ -114,6 +118,12 @@ private fun AdminHomeContent(
             title = "Users",
             subtitle = "Search accounts, suspend or reinstate",
             onClick = onOpenUsers,
+        )
+        AdminActionCard(
+            icon = Icons.Default.CurrencyRupee,
+            title = "Cash Payments",
+            subtitle = "Total collected, owner-wise breakdown, pending vs completed",
+            onClick = onOpenCashSummary,
         )
     }
 }

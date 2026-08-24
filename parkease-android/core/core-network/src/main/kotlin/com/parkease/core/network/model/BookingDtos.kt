@@ -27,6 +27,8 @@ data class BookingResponse(
     val vehicleCategory: String,
     val bookingType: String,
     val status: String,
+    /** Null until the driver picks "pay with cash" on the payment screen — see BookingApi.payCash. */
+    val intendedPaymentMethod: String?,
     val startTime: String?,
     val endTime: String?,
     val actualCheckInAt: String?,
@@ -37,4 +39,21 @@ data class BookingResponse(
     // never recomputes from it.
     val priceSnapshot: Map<String, Any?>?,
     val createdAt: String,
+    // Owner-list enrichment — populated by listBookings/getBooking, null
+    // elsewhere (e.g. right after confirmBooking/payCash).
+    val vehicleRegistrationNumber: String?,
+    val driverContact: String?,
+    val parkingName: String?,
+    val cashAmountMinorUnits: String?,
+    val cashConfirmedAt: String?,
+)
+
+/** GET /bookings/:id/quote — the authoritative payable amount before the driver has picked a payment method at all. */
+@JsonClass(generateAdapter = true)
+data class BookingQuoteResponse(
+    val bookingId: String,
+    val currency: String,
+    val parkingAmountMinorUnits: String,
+    val taxAmountMinorUnits: String,
+    val totalPayableMinorUnits: String,
 )

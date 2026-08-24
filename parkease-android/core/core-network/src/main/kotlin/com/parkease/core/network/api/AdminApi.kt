@@ -29,4 +29,7 @@ interface AdminApi {
 
     @POST("v1/admin/parking/listings/{listingId}/reject")
     suspend fun rejectListing(@Path("listingId") listingId: String, @Body body: AdminRejectRequest): AdminPendingListingResponse
+
+    @GET("v1/admin/reports/cash-summary")
+    suspend fun cashSummary(): AdminCashSummaryResponse
 }

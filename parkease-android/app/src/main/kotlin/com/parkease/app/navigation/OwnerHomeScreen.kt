@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.Badge
+import androidx.compose.material.icons.filled.EventNote
 import androidx.compose.material.icons.filled.LocalParking
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -24,6 +25,7 @@ import androidx.compose.ui.unit.dp
 fun OwnerHomeScreen(
     becomeOwnerError: String?,
     onMyListings: () -> Unit,
+    onBookings: () -> Unit,
     onEarnings: () -> Unit,
     onAttendantTools: () -> Unit,
     onSignOut: () -> Unit,
@@ -51,6 +53,12 @@ fun OwnerHomeScreen(
                 title = "My Parking Listings",
                 subtitle = "Add a space, pin its location, manage sections & photos",
                 onClick = onMyListings,
+            )
+            OwnerActionCard(
+                icon = Icons.Default.EventNote,
+                title = "Bookings",
+                subtitle = "See bookings and confirm cash payments received",
+                onClick = onBookings,
             )
             OwnerActionCard(
                 icon = Icons.Default.AccountBalanceWallet,

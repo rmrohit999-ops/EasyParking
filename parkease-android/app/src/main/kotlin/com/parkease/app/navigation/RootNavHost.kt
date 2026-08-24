@@ -150,6 +150,7 @@ fun RootNavHost(modifier: Modifier = Modifier, viewModel: RootNavViewModel = hil
             OwnerHomeScreen(
                 becomeOwnerError = (becomeOwnerState as? BecomeOwnerState.Error)?.message,
                 onMyListings = { navController.navigate(OwnerParkingRoutes.GRAPH) },
+                onBookings = { navController.navigate(BookingRoutes.OWNER_LIST) },
                 onEarnings = { navController.navigate(EarningsRoutes.GRAPH) },
                 onAttendantTools = { navController.navigate(AttendantRoutes.GRAPH) },
                 onSignOut = { viewModel.signOut() },

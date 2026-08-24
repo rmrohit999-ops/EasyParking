@@ -36,3 +36,26 @@ data class AdminPendingListingResponse(
     val approvalStatus: String,
     val createdAt: String,
 )
+
+@JsonClass(generateAdapter = true)
+data class AdminCashSummaryResponse(
+    val currency: String,
+    val totalCashCollectedMinorUnits: String,
+    val totalCommissionMinorUnits: String,
+    val totalOwnerNetMinorUnits: String,
+    val completedCount: Int,
+    val pendingCount: Int,
+    val byOwner: List<AdminCashByOwnerResponse>,
+)
+
+@JsonClass(generateAdapter = true)
+data class AdminCashByOwnerResponse(
+    val ownerId: String,
+    val businessName: String?,
+    val phone: String?,
+    val email: String?,
+    val transactionCount: Int,
+    val totalCashCollectedMinorUnits: String,
+    val commissionMinorUnits: String,
+    val netEarningsMinorUnits: String,
+)

@@ -21,4 +21,10 @@ interface BookingApi {
 
     @POST("v1/bookings/{bookingId}/cancel")
     suspend fun cancel(@Path("bookingId") bookingId: String, @Body body: CancelBookingRequest): BookingResponse
+
+    @GET("v1/bookings/{bookingId}/quote")
+    suspend fun getQuote(@Path("bookingId") bookingId: String): BookingQuoteResponse
+
+    @POST("v1/bookings/{bookingId}/pay-cash")
+    suspend fun payCash(@Path("bookingId") bookingId: String): BookingResponse
 }

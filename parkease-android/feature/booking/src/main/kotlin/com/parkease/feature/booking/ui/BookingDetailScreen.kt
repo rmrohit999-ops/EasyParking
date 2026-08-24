@@ -18,6 +18,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.parkease.core.model.BookingStatus
 import com.parkease.feature.booking.data.BookingUi
 import com.parkease.feature.booking.data.PassUi
+import com.parkease.feature.booking.data.QuoteUi
 import com.parkease.feature.booking.data.RefundUi
 import com.razorpay.Checkout
 import org.json.JSONObject
@@ -75,6 +76,9 @@ fun BookingDetailScreen(
                     paymentInProgress = uiState.paymentInProgress,
                     paymentMessage = uiState.paymentMessage,
                     onPayNow = viewModel::payNow,
+                    quote = uiState.quote,
+                    cashInProgress = uiState.cashInProgress,
+                    onPayWithCash = viewModel::payWithCash,
                     pass = uiState.pass,
                     passLoading = uiState.passLoading,
                     passMessage = uiState.passMessage,
@@ -102,6 +106,9 @@ private fun BookingDetailContent(
     paymentInProgress: Boolean,
     paymentMessage: String?,
     onPayNow: () -> Unit,
+    quote: QuoteUi?,
+    cashInProgress: Boolean,
+    onPayWithCash: () -> Unit,
     pass: PassUi?,
     passLoading: Boolean,
     passMessage: String?,
@@ -110,6 +117,8 @@ private fun BookingDetailContent(
 ) {
     val canCancel = booking.status == BookingStatus.PENDING_PAYMENT || booking.status == BookingStatus.CONFIRMED
     val canPay = booking.status == BookingStatus.PENDING_PAYMENT
+    val cashPending = booking.status == BookingStatus.PENDING_PAYMENT && booking.intendedPaymentMethod == "CASH"
+    val cashPaid = booking.cashAmount != null
     val canShowPass = booking.status == BookingStatus.CONFIRMED || booking.status == BookingStatus.DRIVER_ARRIVING
     val formatter = DateTimeFormatter.ofPattern("dd MMM yyyy, hh:mm a")
 
@@ -140,16 +149,74 @@ private fun BookingDetailContent(
             }
         }
 
-        if (canPay) {
-            Button(onClick = onPayNow, enabled = !paymentInProgress, modifier = Modifier.fillMaxWidth()) {
+        if (canPay && !cashPending) {
+            quote?.let {
+                ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("Parking Fee: ${it.parkingAmount.toDisplayString()}", style = MaterialTheme.typography.bodyMedium)
+                        if (it.taxAmount.minorUnits.signum() != 0) {
+                            Text("Tax: ${it.taxAmount.toDisplayString()}", style = MaterialTheme.typography.bodyMedium)
+                        }
+                        Text(
+                            "Total Payable: ${it.totalPayable.toDisplayString()}",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                        )
+                    }
+                }
+            }
+            Button(onClick = onPayNow, enabled = !paymentInProgress && !cashInProgress, modifier = Modifier.fillMaxWidth()) {
                 if (paymentInProgress) {
                     CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
                 } else {
                     Text("Pay Now")
                 }
             }
+            OutlinedButton(onClick = onPayWithCash, enabled = !paymentInProgress && !cashInProgress, modifier = Modifier.fillMaxWidth()) {
+                if (cashInProgress) {
+                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                } else {
+                    Text("Pay with Cash")
+                }
+            }
             paymentMessage?.let {
                 Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+
+        if (cashPending) {
+            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    StatusBadge("Cash Payment Pending", MaterialTheme.colorScheme.tertiary)
+                    Text(
+                        "Payment Method: Cash",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    quote?.let {
+                        Text(
+                            "Please pay ${it.totalPayable.toDisplayString()} in cash to the parking owner.",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                }
+            }
+        }
+
+        if (cashPaid) {
+            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    StatusBadge("Paid", MaterialTheme.colorScheme.primary)
+                    Text("Amount Paid: ${booking.cashAmount!!.toDisplayString()}", style = MaterialTheme.typography.bodyMedium)
+                    Text("Payment Method: Cash", style = MaterialTheme.typography.bodyMedium)
+                    Text("Booking ID: ${booking.id}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    booking.cashConfirmedAt?.let {
+                        Text(
+                            "Paid on ${formatter.format(it.atZone(ZoneId.systemDefault()))}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
             }
         }
 
@@ -214,6 +281,21 @@ private fun BookingDetailContent(
                 }
             }
         }
+    }
+}
+
+@Composable
+fun StatusBadge(label: String, color: androidx.compose.ui.graphics.Color) {
+    Surface(
+        color = color.copy(alpha = 0.15f),
+        contentColor = color,
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.labelLarge,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+        )
     }
 }
 

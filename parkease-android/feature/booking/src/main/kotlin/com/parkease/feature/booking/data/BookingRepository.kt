@@ -9,6 +9,7 @@ import com.parkease.core.network.api.QrApi
 import com.parkease.core.network.api.RefundsApi
 import com.parkease.core.network.api.VehiclesApi
 import com.parkease.core.network.model.CancelBookingRequest
+import com.parkease.core.network.model.CashCollectRequest
 import com.parkease.core.network.model.ConfirmBookingRequest
 import com.parkease.core.network.model.CreateHoldRequest
 import com.parkease.core.network.model.CreateInstantBookingRequest
@@ -30,9 +31,21 @@ data class BookingUi(
     val parkingId: String,
     val bookingType: BookingType?,
     val status: BookingStatus?,
+    val intendedPaymentMethod: String?,
     val startTime: Instant?,
     val endTime: Instant?,
     val priceSnapshot: Map<String, Any?>?,
+    val vehicleRegistrationNumber: String?,
+    val driverContact: String?,
+    val parkingName: String?,
+    val cashAmount: Money?,
+    val cashConfirmedAt: Instant?,
+)
+
+data class QuoteUi(
+    val parkingAmount: Money,
+    val taxAmount: Money,
+    val totalPayable: Money,
 )
 
 data class PaymentOrderUi(
@@ -130,6 +143,26 @@ class BookingRepository @Inject constructor(
         paymentsApi.retry(paymentOrderId, RetryPaymentRequest(UUID.randomUUID().toString())).toUi()
     }
 
+    /** The same computePayableBreakdown() the gateway order and cashCollect both use — shows "Parking Fee / Total Payable" before the driver has picked a payment method. */
+    suspend fun getQuote(bookingId: String): BookingActionResult<QuoteUi> = runCatchingApi {
+        val q = bookingApi.getQuote(bookingId)
+        QuoteUi(
+            parkingAmount = Money(BigInteger(q.parkingAmountMinorUnits), q.currency),
+            taxAmount = Money(BigInteger(q.taxAmountMinorUnits), q.currency),
+            totalPayable = Money(BigInteger(q.totalPayableMinorUnits), q.currency),
+        )
+    }
+
+    /** Driver picks "pay with cash" — records intent, notifies both sides. Does not change booking status; cashCollect (owner/attendant side) does that. */
+    suspend fun payCash(bookingId: String): BookingActionResult<BookingUi> = runCatchingApi {
+        bookingApi.payCash(bookingId).toUi()
+    }
+
+    /** Owner/attendant confirms cash was physically received — the amount always comes from the server, never a client-supplied field, so it can't be silently adjusted here. */
+    suspend fun confirmCashReceived(bookingId: String): BookingActionResult<BookingUi> = runCatchingApi {
+        qrApi.cashCollect(bookingId, CashCollectRequest()).toUi()
+    }
+
     suspend fun getPayment(paymentOrderId: String): BookingActionResult<PaymentOrderUi> = runCatchingApi {
         paymentsApi.getOne(paymentOrderId).toUi()
     }
@@ -205,7 +238,13 @@ private fun com.parkease.core.network.model.BookingResponse.toUi() = BookingUi(
     parkingId = parkingId,
     bookingType = bookingType.toEnumOrNull<BookingType>(),
     status = status.toEnumOrNull<BookingStatus>(),
+    intendedPaymentMethod = intendedPaymentMethod,
     startTime = startTime?.let { runCatching { Instant.parse(it) }.getOrNull() },
     endTime = endTime?.let { runCatching { Instant.parse(it) }.getOrNull() },
     priceSnapshot = priceSnapshot,
+    vehicleRegistrationNumber = vehicleRegistrationNumber,
+    driverContact = driverContact,
+    parkingName = parkingName,
+    cashAmount = cashAmountMinorUnits?.let { Money(BigInteger(it)) },
+    cashConfirmedAt = cashConfirmedAt?.let { runCatching { Instant.parse(it) }.getOrNull() },
 )
