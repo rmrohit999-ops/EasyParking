@@ -71,12 +71,13 @@ android {
             dimension = "environment"
             applicationIdSuffix = ".dev"
             versionNameSuffix = "-dev"
-            // Local-machine override for on-device testing: the dev backend isn't deployed
-            // anywhere reachable yet, so this points at the developer's own LAN IP running
-            // `npm run start:dev` (see app/src/dev/res/xml/network_security_config.xml for
-            // the matching cleartext allowance). Swap back to a real https://api-dev... URL
-            // once a dev backend is actually deployed somewhere.
-            buildConfigField("String", "API_BASE_URL", "\"http://192.168.1.5:3000/\"")
+            // Now points at the real backend deployed on Railway (see
+            // railway.com/project/362df2c3-6a34-4259-96ad-9848b4c6b83b) — a
+            // real public HTTPS URL, works from any network, no dependency
+            // on the developer's own Mac being on. The cleartext exception
+            // in app/src/dev/res/xml/network_security_config.xml for the
+            // old LAN IP is now unused but left in place since it's harmless.
+            buildConfigField("String", "API_BASE_URL", "\"https://easyparking-production.up.railway.app/\"")
             resValue("string", "app_name", "ParkEase Dev")
         }
         create("staging") {
