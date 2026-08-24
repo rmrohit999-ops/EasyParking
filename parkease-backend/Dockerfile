@@ -20,6 +20,7 @@ CMD ["npm", "run", "start:dev"]
 FROM deps AS build
 COPY . .
 RUN npm run build
+RUN ls -la /app/dist && test -f /app/dist/main.js
 
 # ---- prod: minimal runtime image --------------------------------------------
 FROM base AS prod
