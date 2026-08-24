@@ -30,6 +30,9 @@ export interface AppConfig {
     smsProvider: string;
     smsApiKey: string;
     smsSenderId: string;
+    twilioAccountSid: string;
+    twilioAuthToken: string;
+    twilioFromNumber: string;
     length: number;
     ttlSeconds: number;
     maxAttempts: number;
@@ -176,11 +179,17 @@ export default (): AppConfig => ({
     smsProvider: process.env.SMS_PROVIDER ?? '',
     smsApiKey: process.env.SMS_PROVIDER_API_KEY ?? '',
     smsSenderId: process.env.SMS_SENDER_ID ?? '',
+    twilioAccountSid: process.env.TWILIO_ACCOUNT_SID ?? '',
+    twilioAuthToken: process.env.TWILIO_AUTH_TOKEN ?? '',
+    twilioFromNumber: process.env.TWILIO_FROM_NUMBER ?? '',
     length: parseInt(process.env.OTP_LENGTH ?? '6', 10),
     ttlSeconds: parseInt(process.env.OTP_TTL_SECONDS ?? '300', 10),
     maxAttempts: parseInt(process.env.OTP_MAX_ATTEMPTS ?? '5', 10),
     resendCooldownSeconds: parseInt(process.env.OTP_RESEND_COOLDOWN_SECONDS ?? '30', 10),
-    isConfigured: Boolean(process.env.SMS_PROVIDER && process.env.SMS_PROVIDER_API_KEY),
+    isConfigured:
+      process.env.SMS_PROVIDER === 'twilio'
+        ? Boolean(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_FROM_NUMBER)
+        : Boolean(process.env.SMS_PROVIDER && process.env.SMS_PROVIDER_API_KEY),
   },
 
   email: {

@@ -1,6 +1,7 @@
 import {
   HttpException,
   HttpStatus,
+  Inject,
   Injectable,
   Logger,
   ServiceUnavailableException,
@@ -11,6 +12,7 @@ import { randomInt } from 'crypto';
 import * as argon2 from 'argon2';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { AppConfig } from '../../../common/config/configuration';
+import { SMS_PROVIDER_SERVICE, SmsProvider } from './provider/sms-provider.interface';
 
 class TooManyRequestsException extends HttpException {
   constructor(message: string) {
@@ -35,6 +37,7 @@ export class OtpService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService<AppConfig, true>,
+    @Inject(SMS_PROVIDER_SERVICE) private readonly smsProvider: SmsProvider,
   ) {}
 
   isConfigured(): boolean {
@@ -97,20 +100,16 @@ export class OtpService {
   }
 
   /**
-   * Real provider boundary. With no SMS_PROVIDER configured, requestOtp()
-   * above already refuses before reaching here — this method exists so a
-   * concrete provider (MSG91/Twilio/etc.) has a single integration point
-   * once credentials are supplied, per the Milestone 0 environment spec.
+   * Real provider dispatch. With no SMS_PROVIDER configured, requestOtp()
+   * above already refuses before reaching here — this just delegates to
+   * whichever SmsProvider AuthModule's factory selected (TwilioSmsProviderService
+   * for SMS_PROVIDER=twilio, NullSmsProviderService otherwise). Never logs
+   * or returns the OTP code itself.
    */
   private async sendViaProvider(phoneOrEmail: string, code: string): Promise<void> {
     const cfg = this.configService.get('otp', { infer: true });
     this.logger.log(`Dispatching OTP via ${cfg.smsProvider} to ${maskContact(phoneOrEmail)}`);
-    // TODO(Milestone 7-adjacent infra work): wire the real provider SDK call
-    // here (e.g. MSG91/Twilio REST call using cfg.smsApiKey/cfg.smsSenderId).
-    // Deliberately not implemented against a specific vendor in this
-    // foundation pass — see Milestone 0 §18 open question on SMS provider
-    // choice. Never logs or returns the OTP code itself.
-    void code;
+    await this.smsProvider.sendOtp(phoneOrEmail, code);
   }
 }
 

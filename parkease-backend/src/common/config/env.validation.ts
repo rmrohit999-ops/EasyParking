@@ -37,6 +37,12 @@ export const envValidationSchema = Joi.object({
   SMS_PROVIDER: Joi.string().allow('').default(''),
   SMS_PROVIDER_API_KEY: Joi.string().allow('').default(''),
   SMS_SENDER_ID: Joi.string().allow('').default(''),
+  // Twilio-specific (SMS_PROVIDER=twilio): Account SID + Auth Token are the
+  // real credential pair Twilio's REST API needs, distinct in shape from
+  // the generic SMS_PROVIDER_API_KEY/SMS_SENDER_ID fields above.
+  TWILIO_ACCOUNT_SID: Joi.string().allow('').default(''),
+  TWILIO_AUTH_TOKEN: Joi.string().allow('').default(''),
+  TWILIO_FROM_NUMBER: Joi.string().allow('').default(''),
   OTP_LENGTH: Joi.number().integer().min(4).max(8).default(6),
   OTP_TTL_SECONDS: Joi.number().integer().positive().default(300),
   OTP_MAX_ATTEMPTS: Joi.number().integer().positive().default(5),
