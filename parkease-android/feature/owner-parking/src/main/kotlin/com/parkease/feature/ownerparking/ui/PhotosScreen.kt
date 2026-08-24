@@ -1,6 +1,9 @@
 @file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 package com.parkease.feature.ownerparking.ui
 
+import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -23,7 +26,13 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.parkease.feature.ownerparking.data.PhotoUi
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.ByteArrayOutputStream
+
+private const val MAX_PHOTO_DIMENSION_PX = 1600
+private const val JPEG_QUALITY = 82
 
 @Composable
 fun PhotosScreen(
@@ -34,13 +43,22 @@ fun PhotosScreen(
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
 
+    // A raw phone-camera photo is commonly 5-15+ MB — uploaded as-is, that
+    // was slow/large enough to blow past even a widened write timeout on
+    // an ordinary mobile connection (the actual root cause of "something
+    // went wrong" here, not just a timeout number that needed raising
+    // again). Downscaling + re-compressing to a real display-sized JPEG
+    // before upload fixes this at the source: smaller, faster, and more
+    // reliable regardless of connection speed. Runs on Dispatchers.IO —
+    // BitmapFactory decode/compress is real CPU+IO work that shouldn't
+    // block the coroutine backing this Composable's rememberCoroutineScope
+    // (which defaults to Main).
     val pickImageLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         if (uri == null) return@rememberLauncherForActivityResult
         coroutineScope.launch {
-            val contentType = context.contentResolver.getType(uri) ?: "image/jpeg"
-            val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+            val bytes = withContext(Dispatchers.IO) { compressPhotoForUpload(context, uri) }
             if (bytes != null) {
-                viewModel.upload(photoType = "LISTING", contentType = contentType, bytes = bytes)
+                viewModel.upload(photoType = "LISTING", contentType = "image/jpeg", bytes = bytes)
             }
         }
     }
@@ -91,6 +109,43 @@ fun PhotosScreen(
             }
         }
     }
+}
+
+/**
+ * Downsamples and re-encodes the picked image to a JPEG capped at
+ * [MAX_PHOTO_DIMENSION_PX] on the longer side. Two-pass decode: first with
+ * `inJustDecodeBounds` to read dimensions without allocating pixel memory,
+ * then a real decode using the smallest `inSampleSize` that still leaves
+ * enough resolution for a final precise scale-down. Returns null if the
+ * URI can't be read or decoded (e.g. picker returned an invalid Uri).
+ */
+private fun compressPhotoForUpload(context: Context, uri: Uri): ByteArray? {
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+    val (width, height) = bounds.outWidth to bounds.outHeight
+    if (width <= 0 || height <= 0) return null
+
+    var sampleSize = 1
+    while (width / sampleSize > MAX_PHOTO_DIMENSION_PX * 2 || height / sampleSize > MAX_PHOTO_DIMENSION_PX * 2) {
+        sampleSize *= 2
+    }
+
+    val decoded = context.contentResolver.openInputStream(uri)?.use {
+        BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = sampleSize })
+    } ?: return null
+
+    val scale = MAX_PHOTO_DIMENSION_PX.toFloat() / maxOf(decoded.width, decoded.height)
+    val scaled = if (scale < 1f) {
+        Bitmap.createScaledBitmap(decoded, (decoded.width * scale).toInt(), (decoded.height * scale).toInt(), true)
+    } else {
+        decoded
+    }
+
+    val output = ByteArrayOutputStream()
+    scaled.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, output)
+    if (scaled !== decoded) decoded.recycle()
+    scaled.recycle()
+    return output.toByteArray()
 }
 
 @Composable
