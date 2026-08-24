@@ -33,4 +33,10 @@ export class ReportsController {
   utilizationSnapshot() {
     return this.reportsService.utilizationSnapshot();
   }
+
+  @Get('cash-summary')
+  @ApiOperation({ summary: 'Cash payment monitoring: total collected, owner-wise breakdown, pending vs completed counts' })
+  cashSummary(@Query() query: ReportDateRangeQueryDto) {
+    return this.reportsService.cashSummary(query);
+  }
 }

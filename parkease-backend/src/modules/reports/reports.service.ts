@@ -187,6 +187,71 @@ export class ReportsService {
     };
   }
 
+  /**
+   * Section 8's admin cash-monitoring view: total cash collected, broken
+   * down by owner, plus pending-vs-completed counts. "Completed" reads
+   * from Transaction (payment_method=CASH, payment_status=SUCCESSFUL —
+   * only ever written by QrService.cashCollect, so this is exactly the
+   * set of confirmed cash collections). "Pending" reads from Booking
+   * (intended_payment_method=CASH, status=PENDING_PAYMENT — set by
+   * BookingService.payCash the moment a driver picks cash, before an
+   * owner has confirmed anything) — the two tables never overlap, since a
+   * booking's intended_payment_method is only ever a same-row signal, not
+   * itself proof of payment.
+   */
+  async cashSummary(query: ReportDateRangeQueryDto) {
+    const { from, to } = this.resolveRange(query);
+
+    const [completedAgg, pendingCount, byOwner] = await Promise.all([
+      this.prisma.transaction.aggregate({
+        where: { payment_method: 'CASH', payment_status: 'SUCCESSFUL', created_at: { gte: from, lte: to } },
+        _sum: { driver_total: true, commission_amount: true, owner_net: true },
+        _count: { _all: true },
+      }),
+      this.prisma.booking.count({
+        where: { intended_payment_method: 'CASH', status: 'PENDING_PAYMENT', created_at: { gte: from, lte: to } },
+      }),
+      this.prisma.transaction.groupBy({
+        by: ['owner_id'],
+        where: { payment_method: 'CASH', payment_status: 'SUCCESSFUL', created_at: { gte: from, lte: to } },
+        _sum: { driver_total: true, commission_amount: true, owner_net: true },
+        _count: { _all: true },
+        orderBy: { _sum: { driver_total: 'desc' } },
+        take: 50,
+      }),
+    ]);
+
+    const owners = await this.prisma.ownerProfile.findMany({
+      where: { id: { in: byOwner.map((g) => g.owner_id) } },
+      include: { user: { select: { phone: true, email: true } } },
+    });
+    const ownerById = new Map(owners.map((o) => [o.id, o]));
+
+    return {
+      from,
+      to,
+      currency: 'INR',
+      totalCashCollectedMinorUnits: (completedAgg._sum.driver_total ?? 0n).toString(),
+      totalCommissionMinorUnits: (completedAgg._sum.commission_amount ?? 0n).toString(),
+      totalOwnerNetMinorUnits: (completedAgg._sum.owner_net ?? 0n).toString(),
+      completedCount: completedAgg._count._all,
+      pendingCount,
+      byOwner: byOwner.map((g) => {
+        const owner = ownerById.get(g.owner_id);
+        return {
+          ownerId: g.owner_id,
+          businessName: owner?.business_name ?? null,
+          phone: owner?.user.phone ?? null,
+          email: owner?.user.email ?? null,
+          transactionCount: g._count._all,
+          totalCashCollectedMinorUnits: (g._sum.driver_total ?? 0n).toString(),
+          commissionMinorUnits: (g._sum.commission_amount ?? 0n).toString(),
+          netEarningsMinorUnits: (g._sum.owner_net ?? 0n).toString(),
+        };
+      }),
+    };
+  }
+
   async utilizationSnapshot() {
     const sections = await this.prisma.parkingSection.findMany({
       where: { status: 'ACTIVE', approval_status: 'APPROVED' },

@@ -793,6 +793,13 @@ model Booking {
   vehicle_category     VehicleCategory // denormalized snapshot at booking time
   booking_type         BookingType
   status               BookingStatus   @default(PENDING_PAYMENT)
+  // Set when the driver explicitly picks "pay with cash" on the payment
+  // screen (POST /bookings/:id/pay-cash) — null until then, since a
+  // booking doesn't commit to a payment method at creation time (the
+  // driver can still tap "Pay Now" for online instead). Never set to
+  // ONLINE explicitly; that path never needed this signal before cash
+  // payments needed an owner-facing "pending" state to show/notify on.
+  intended_payment_method PaymentMethod?
   start_time           DateTime?
   end_time             DateTime?
   actual_check_in_at   DateTime?

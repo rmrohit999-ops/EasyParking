@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { BookingModule } from '../booking/booking.module';
 import { LedgerModule } from '../ledger/ledger.module';
 import { RefundsModule } from '../refunds/refunds.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { QrPassController } from './qr-pass.controller';
 import { AttendantController } from './attendant.controller';
 import { QrService } from './qr.service';
@@ -16,10 +17,13 @@ import { QrService } from './qr.service';
  * capacity math. RefundsModule was added in Milestone 9 so a mismatch
  * resolved as REJECTED_ENTRY can trigger its full refund in the same
  * request — RefundsModule imports BookingModule too but never imports
- * QrModule, so this stays a DAG.
+ * QrModule, so this stays a DAG. NotificationsModule added so cashCollect
+ * can send the "cash payment received" confirmation directly, distinct
+ * from the generic "Booking confirmed" notification applyBookingTransition
+ * already fires for every CONFIRMED transition regardless of method.
  */
 @Module({
-  imports: [BookingModule, LedgerModule, RefundsModule],
+  imports: [BookingModule, LedgerModule, RefundsModule, NotificationsModule],
   controllers: [QrPassController, AttendantController],
   providers: [QrService],
   exports: [QrService],

@@ -7,7 +7,9 @@ import { AuthenticatedUser } from '../../common/decorators/current-user.decorato
 import { BookingService } from '../booking/booking.service';
 import { LedgerService } from '../ledger/ledger.service';
 import { RefundsService } from '../refunds/refunds.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { computePayableBreakdown } from '../payments/pricing';
+import { Money } from '../../common/money/money';
 import { CashCollectDto, CheckInDto, CheckOutDto, ReportMismatchDto, ResolveMismatchDto, ScanQrDto } from './dto/qr.dto';
 import { hashQrToken, parseQrToken, signQrToken, verifyQrTokenSignature } from './qr-token.util';
 
@@ -23,6 +25,7 @@ export class QrService {
     private readonly bookingService: BookingService,
     private readonly ledgerService: LedgerService,
     private readonly refundsService: RefundsService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   // ---------------------------------------------------------------------
@@ -289,6 +292,19 @@ export class QrService {
         idempotencyKey: `cash:${bookingId}`,
       });
       await this.bookingService.markPaid(bookingId, actorUser.id, source, tx, actorRole);
+    });
+
+    // Distinct from the generic "Booking confirmed" notification
+    // applyBookingTransition already fires for every CONFIRMED transition
+    // (online success included) — this one specifically confirms the cash
+    // amount was received, closing the loop the driver saw when they
+    // picked "pay with cash" (BookingService.payCash).
+    await this.notificationsService.send({
+      userId: booking.driver_id,
+      category: 'booking_status',
+      type: 'CASH_PAYMENT_RECEIVED',
+      title: 'Cash payment received',
+      body: `Your cash payment of ${Money.of(breakdown.driverTotalMinorUnits, breakdown.currency).toDisplayString()} has been received and your booking is now paid.`,
     });
 
     return this.bookingService.getBooking(actorUser, bookingId);

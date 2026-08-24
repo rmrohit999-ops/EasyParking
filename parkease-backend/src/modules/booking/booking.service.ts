@@ -8,6 +8,8 @@ import { OCCUPIED_BOOKING_STATUSES, RESERVED_BOOKING_STATUSES, TERMINAL_BOOKING_
 import { BookingExpiryProducer } from './booking-expiry.queue';
 import { CancelBookingDto, ConfirmBookingDto, CreateHoldDto, CreateInstantBookingDto } from './dto/booking.dto';
 import { NotificationsService } from '../notifications/notifications.service';
+import { computePayableBreakdown } from '../payments/pricing';
+import { Money } from '../../common/money/money';
 
 @Injectable()
 export class BookingService {
@@ -219,7 +221,11 @@ export class BookingService {
     await this.expireStaleBookings();
 
     if (user.roles.includes('ADMIN')) {
-      const bookings = await this.prisma.booking.findMany({ orderBy: { created_at: 'desc' }, take: 200 });
+      const bookings = await this.prisma.booking.findMany({
+        orderBy: { created_at: 'desc' },
+        take: 200,
+        include: BOOKING_VIEW_INCLUDE,
+      });
       return bookings.map(toBookingView);
     }
     if (user.roles.includes('OWNER')) {
@@ -229,6 +235,7 @@ export class BookingService {
         where: { parking: { owner_id: ownerProfile.id } },
         orderBy: { created_at: 'desc' },
         take: 200,
+        include: BOOKING_VIEW_INCLUDE,
       });
       return bookings.map(toBookingView);
     }
@@ -238,19 +245,100 @@ export class BookingService {
       where: { driver_id: user.id },
       orderBy: { created_at: 'desc' },
       take: 200,
+      include: BOOKING_VIEW_INCLUDE,
     });
     return bookings.map(toBookingView);
   }
 
   async getBooking(user: AuthenticatedUser & { roles: string[] }, bookingId: string) {
     await this.expireHoldForBookingIfDue(bookingId);
-    const booking = await this.prisma.booking.findUnique({ where: { id: bookingId }, include: { parking: true } });
+    const booking = await this.prisma.booking.findUnique({
+      where: { id: bookingId },
+      include: BOOKING_VIEW_INCLUDE,
+    });
     if (!booking) throw new NotFoundException('Booking not found.');
 
     const allowed = await this.canAccessBooking(user, booking);
     if (!allowed) throw new ForbiddenException('You do not have permission to view this booking.');
 
     return toBookingView(booking);
+  }
+
+  /**
+   * The authoritative payable amount for a PENDING_PAYMENT booking — same
+   * computePayableBreakdown() used by both the online-payment order and
+   * cashCollect, so "what the customer is told to pay" and "what the
+   * gateway/owner actually settles" can never drift apart. Exists so the
+   * payment screen can show "Parking Fee / Total Payable" before the
+   * driver has picked a payment method at all, not just after.
+   */
+  async getQuote(user: AuthenticatedUser & { roles: string[] }, bookingId: string) {
+    const booking = await this.prisma.booking.findUnique({
+      where: { id: bookingId },
+      include: { parking: true, section: true },
+    });
+    if (!booking) throw new NotFoundException('Booking not found.');
+    const allowed = await this.canAccessBooking(user, booking);
+    if (!allowed) throw new ForbiddenException('You do not have permission to view this booking.');
+
+    const breakdown = await computePayableBreakdown(this.prisma, this.configService, booking.section, booking);
+    return {
+      bookingId,
+      currency: breakdown.currency,
+      parkingAmountMinorUnits: breakdown.parkingAmountMinorUnits.toString(),
+      taxAmountMinorUnits: breakdown.taxAmountMinorUnits.toString(),
+      totalPayableMinorUnits: breakdown.driverTotalMinorUnits.toString(),
+    };
+  }
+
+  /**
+   * Driver explicitly picks "pay with cash" on the payment screen — records
+   * the intent (so the owner's booking list can show "Cash Payment Pending"
+   * rather than an ambiguous PENDING_PAYMENT with no method) and notifies
+   * both sides immediately, per the same "owner should know now, not just
+   * when the driver shows up" requirement the cash-collect flow already
+   * assumes. Does NOT transition booking status — PENDING_PAYMENT is
+   * correct until the owner/attendant actually confirms cash in hand via
+   * QrService.cashCollect, which is the only thing that moves it to
+   * CONFIRMED (this stays purely a notification/display signal, so it
+   * can never race or conflict with the online-payment path).
+   */
+  async payCash(driverId: string, bookingId: string) {
+    const booking = await this.prisma.booking.findUnique({
+      where: { id: bookingId },
+      include: { parking: true, section: true },
+    });
+    if (!booking) throw new NotFoundException('Booking not found.');
+    if (booking.driver_id !== driverId) throw new ForbiddenException('That booking does not belong to you.');
+    if (booking.status !== 'PENDING_PAYMENT') {
+      throw new ConflictException(`This booking is ${booking.status}, not awaiting payment.`);
+    }
+
+    const breakdown = await computePayableBreakdown(this.prisma, this.configService, booking.section, booking);
+
+    await this.prisma.booking.update({ where: { id: bookingId }, data: { intended_payment_method: 'CASH' } });
+
+    await this.notificationsService.send({
+      userId: booking.driver_id,
+      category: 'booking_status',
+      type: 'CASH_PAYMENT_PENDING',
+      title: 'Cash payment pending',
+      body: `Please pay ${Money.of(breakdown.driverTotalMinorUnits, breakdown.currency).toDisplayString()} in cash to the parking owner.`,
+    });
+
+    const ownerProfile = await this.prisma.ownerProfile.findUnique({ where: { id: booking.parking.owner_id } });
+    if (ownerProfile) {
+      await this.notificationsService.send({
+        userId: ownerProfile.user_id,
+        category: 'booking_status',
+        type: 'CASH_PAYMENT_PENDING_OWNER',
+        title: 'Cash payment pending',
+        body: `Cash payment of ${Money.of(breakdown.driverTotalMinorUnits, breakdown.currency).toDisplayString()} is pending for Booking #${bookingId.slice(0, 8)}.`,
+      });
+    }
+
+    const updated = await this.prisma.booking.findUniqueOrThrow({ where: { id: bookingId } });
+    return toBookingView(updated);
   }
 
   private async canAccessBooking(
@@ -570,6 +658,21 @@ function assertCompatible(
   }
 }
 
+/**
+ * Shared enrichment for toBookingView's optional display fields — used by
+ * every listBookings branch and getBooking so the owner's booking list
+ * (customer contact, vehicle plate, cash-collection status) never needs a
+ * second round trip. cash_collections is a to-many relation but a booking
+ * only ever has 0 or 1 (cashCollect's PENDING_PAYMENT-only guard makes a
+ * second one impossible), so toBookingView just reads index 0.
+ */
+const BOOKING_VIEW_INCLUDE = {
+  vehicle: { select: { registration_number: true } },
+  driver: { select: { email: true, phone: true } },
+  parking: { select: { name: true, owner_id: true } },
+  cash_collections: { select: { amount: true, confirmed_at: true } },
+} satisfies Prisma.BookingInclude;
+
 function toBookingView(b: {
   id: string;
   driver_id: string;
@@ -579,13 +682,27 @@ function toBookingView(b: {
   vehicle_category: string;
   booking_type: string;
   status: string;
+  intended_payment_method?: string | null;
   start_time: Date | null;
   end_time: Date | null;
   actual_check_in_at: Date | null;
   actual_check_out_at: Date | null;
   price_snapshot: unknown;
   created_at: Date;
+  // Optional — only populated when the caller's query actually included
+  // these relations (listBookings' OWNER branch and getBooking do; the
+  // lighter fetches in payCash/markPaid don't need to). Never required,
+  // so every existing call site keeps compiling unchanged.
+  vehicle?: { registration_number: string } | null;
+  // User has no name field (registration's fullName is collected but not
+  // persisted — a separate pre-existing gap, not this feature's to fix) —
+  // email/phone is the same "who is this" fallback the admin users list
+  // already uses.
+  driver?: { phone: string | null; email: string | null } | null;
+  parking?: { name: string } | null;
+  cash_collections?: { amount: bigint; confirmed_at: Date | null }[];
 }) {
+  const cashCollection = b.cash_collections?.[0];
   return {
     id: b.id,
     driverId: b.driver_id,
@@ -595,11 +712,17 @@ function toBookingView(b: {
     vehicleCategory: b.vehicle_category,
     bookingType: b.booking_type,
     status: b.status,
+    intendedPaymentMethod: b.intended_payment_method ?? null,
     startTime: b.start_time,
     endTime: b.end_time,
     actualCheckInAt: b.actual_check_in_at,
     actualCheckOutAt: b.actual_check_out_at,
     priceSnapshot: b.price_snapshot,
     createdAt: b.created_at,
+    vehicleRegistrationNumber: b.vehicle?.registration_number ?? null,
+    driverContact: b.driver?.email ?? b.driver?.phone ?? null,
+    parkingName: b.parking?.name ?? null,
+    cashAmountMinorUnits: cashCollection ? cashCollection.amount.toString() : null,
+    cashConfirmedAt: cashCollection?.confirmed_at ?? null,
   };
 }

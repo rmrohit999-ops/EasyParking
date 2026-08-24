@@ -60,4 +60,18 @@ export class BookingController {
   getOne(@CurrentUser() user: AuthenticatedUser & { roles: string[] }, @Param('bookingId') bookingId: string) {
     return this.bookingService.getBooking(user, bookingId);
   }
+
+  @Get(':bookingId/quote')
+  @ApiOperation({ summary: 'The authoritative payable amount for a PENDING_PAYMENT booking (fee/tax/total) — same computation the gateway order and cash-collect both use' })
+  getQuote(@CurrentUser() user: AuthenticatedUser & { roles: string[] }, @Param('bookingId') bookingId: string) {
+    return this.bookingService.getQuote(user, bookingId);
+  }
+
+  @Post(':bookingId/pay-cash')
+  @Roles('DRIVER')
+  @Throttle({ limit: 10, windowSeconds: 60 })
+  @ApiOperation({ summary: 'Driver picks "pay with cash" — records intent and notifies both driver and owner; does not itself change booking status (see QrService.cashCollect for the actual confirmation)' })
+  payCash(@CurrentUser() user: AuthenticatedUser, @Param('bookingId') bookingId: string) {
+    return this.bookingService.payCash(user.id, bookingId);
+  }
 }
