@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Brand palette (green / white / blue / black). Partner app's
+         launcher background uses green to visually distinguish it from
+         app-driver's blue on a device with both installed. -->
+    <color name="parkease_green">#1B8A5A</color>
+    <color name="parkease_blue">#1257D6</color>
+    <color name="parkease_black">#101418</color>
+    <color name="parkease_white">#FFFFFF</color>
+</resources>

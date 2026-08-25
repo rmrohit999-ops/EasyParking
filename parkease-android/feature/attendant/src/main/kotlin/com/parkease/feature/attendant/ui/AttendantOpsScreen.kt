@@ -20,6 +20,7 @@ import com.parkease.feature.attendant.data.ScanResultUi
 @Composable
 fun AttendantOpsScreen(
     onBack: () -> Unit,
+    onSignOut: (() -> Unit)? = null,
     viewModel: AttendantOpsViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -29,6 +30,9 @@ fun AttendantOpsScreen(
             TopAppBar(
                 title = { Text("Attendant") },
                 navigationIcon = { TextButton(onClick = onBack) { Text("Back") } },
+                actions = {
+                    onSignOut?.let { signOut -> TextButton(onClick = signOut) { Text("Sign out") } }
+                },
             )
         },
     ) { padding ->

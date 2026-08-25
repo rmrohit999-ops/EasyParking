@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Dev-flavor-only override — permits cleartext HTTP to a single named local
+  IP so a debug build can reach a backend running on a developer's own
+  machine over LAN during manual device testing. Update the IP (or point
+  back at a real https:// dev API in build.gradle.kts's dev flavor block)
+  as that changes.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">192.168.1.5</domain>
+    </domain-config>
+</network-security-config>

@@ -18,10 +18,13 @@ object AttendantRoutes {
  * *Graph pattern used by feature:booking/feature:vehicles/
  * feature:owner-parking/feature:driver-search.
  */
-fun NavGraphBuilder.attendantGraph(navController: NavController) {
+fun NavGraphBuilder.attendantGraph(navController: NavController, onSignOut: (() -> Unit)? = null) {
     navigation(startDestination = AttendantRoutes.OPS, route = AttendantRoutes.GRAPH) {
         composable(AttendantRoutes.OPS) {
-            AttendantOpsScreen(onBack = { navController.popBackStack() })
+            AttendantOpsScreen(
+                onBack = { navController.popBackStack() },
+                onSignOut = onSignOut,
+            )
         }
     }
 }

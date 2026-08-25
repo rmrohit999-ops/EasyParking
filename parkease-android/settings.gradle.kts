@@ -23,13 +23,17 @@ rootProject.name = "ParkEase"
 // can be built and unit-tested without an Android SDK — it holds the
 // vehicle/booking/payment enums shared across the app.
 //
-// Feature modules are added one at a time as their milestone starts, per
-// the folder structure in the Milestone 0 architecture doc:
-//   - Milestone 2: feature:auth
-//   - Milestone 3: feature:vehicles
-//   - Milestone 4+: feature:driver-search, feature:owner-*, etc. (not yet added)
+// Two app modules, not one: app-driver (drivers) and app-partner (owners +
+// attendants), each a real installable APK with its own applicationId and
+// Play Store listing. The original single :app module (Welcome-screen
+// role-picker serving all three roles from one APK) is retired — its
+// source is left on disk under app/ for reference/rollback, but it's no
+// longer included in the build. Both new app modules share every
+// core-*/feature:* module below; only the thin app-level shell (Hilt
+// entry point, root NavHost, manifest, signing) is duplicated per app.
 // -----------------------------------------------------------------------------
-include(":app")
+include(":app-driver")
+include(":app-partner")
 include(":core:core-model")
 include(":core:core-ui")
 include(":core:core-network")
