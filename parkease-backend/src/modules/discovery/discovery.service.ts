@@ -9,6 +9,8 @@ export interface SearchRow {
   parking_type: string;
   address_line: string;
   city: string;
+  latitude: number;
+  longitude: number;
   distance_meters: number;
   section_id: string;
   section_name: string;
@@ -81,6 +83,8 @@ export class DiscoveryService {
         pl.parking_type AS parking_type,
         loc.address_line AS address_line,
         loc.city AS city,
+        loc.latitude AS latitude,
+        loc.longitude AS longitude,
         ST_Distance(loc.geog, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography) AS distance_meters,
         ps.id AS section_id,
         ps.name AS section_name,
@@ -136,6 +140,8 @@ export class DiscoveryService {
         parkingType: string;
         addressLine: string;
         city: string;
+        latitude: number;
+        longitude: number;
         distanceMeters: number;
         sections: ReturnType<typeof toSectionSearchView>[];
       }
@@ -154,6 +160,8 @@ export class DiscoveryService {
           parkingType: row.parking_type,
           addressLine: row.address_line,
           city: row.city,
+          latitude: row.latitude,
+          longitude: row.longitude,
           distanceMeters: row.distance_meters,
           sections: [section],
         });
