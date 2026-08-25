@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Camera capture writes a temp JPEG here before it's compressed and
+         uploaded; nothing under this path is meant to persist. -->
+    <cache-path name="camera_captures" path="camera_captures/" />
+</paths>

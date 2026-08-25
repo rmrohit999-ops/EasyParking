@@ -71,6 +71,24 @@
             android:name="com.google.firebase.messaging.default_notification_icon"
             android:resource="@drawable/ic_notification" />
 
+        <!--
+            Lets the in-app camera capture (owner photo upload) hand the
+            system Camera app a writable content:// URI for its temp file —
+            required since Android 7 blocks file:// URIs shared across app
+            boundaries. ${applicationId} resolves per build flavor
+            (com.parkease.app / .dev / .staging), so this never collides
+            across the three variants installed side by side.
+        -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
     </application>
 
 </manifest>

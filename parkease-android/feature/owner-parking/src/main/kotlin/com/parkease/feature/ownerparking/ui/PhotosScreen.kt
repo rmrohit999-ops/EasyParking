@@ -1,12 +1,15 @@
 @file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 package com.parkease.feature.ownerparking.ui
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -14,7 +17,9 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -22,6 +27,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
@@ -30,6 +37,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
+import java.io.File
 
 private const val MAX_PHOTO_DIMENSION_PX = 1600
 private const val JPEG_QUALITY = 82
@@ -43,23 +51,58 @@ fun PhotosScreen(
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
 
+    var showSourcePicker by remember { mutableStateOf(false) }
+    var pendingCameraUri by remember { mutableStateOf<Uri?>(null) }
+
     // A raw phone-camera photo is commonly 5-15+ MB — uploaded as-is, that
     // was slow/large enough to blow past even a widened write timeout on
-    // an ordinary mobile connection (the actual root cause of "something
-    // went wrong" here, not just a timeout number that needed raising
-    // again). Downscaling + re-compressing to a real display-sized JPEG
-    // before upload fixes this at the source: smaller, faster, and more
-    // reliable regardless of connection speed. Runs on Dispatchers.IO —
-    // BitmapFactory decode/compress is real CPU+IO work that shouldn't
-    // block the coroutine backing this Composable's rememberCoroutineScope
-    // (which defaults to Main).
-    val pickImageLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
-        if (uri == null) return@rememberLauncherForActivityResult
+    // an ordinary mobile connection. Downscaling + re-compressing to a real
+    // display-sized JPEG before upload fixes this at the source: smaller,
+    // faster, and more reliable regardless of connection speed. Runs on
+    // Dispatchers.IO — BitmapFactory decode/compress is real CPU+IO work
+    // that shouldn't block the coroutine backing this Composable's
+    // rememberCoroutineScope (which defaults to Main). Shared by both the
+    // gallery pick and the camera capture below, since a capture ends up
+    // as just another content:// Uri once the system Camera app returns.
+    fun handlePickedPhoto(uri: Uri?) {
+        if (uri == null) return
         coroutineScope.launch {
             val bytes = withContext(Dispatchers.IO) { compressPhotoForUpload(context, uri) }
             if (bytes != null) {
                 viewModel.upload(photoType = "LISTING", contentType = "image/jpeg", bytes = bytes)
             }
+        }
+    }
+
+    val pickImageLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+        handlePickedPhoto(uri)
+    }
+
+    // TakePicture needs a pre-created writable Uri handed in, and reports
+    // back only success/failure against that same Uri (not the Uri itself)
+    // — pendingCameraUri is how the callback finds out which file it wrote.
+    val takePictureLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
+        val uri = pendingCameraUri
+        pendingCameraUri = null
+        if (success) handlePickedPhoto(uri)
+    }
+
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) {
+            val uri = createCameraCaptureUri(context)
+            pendingCameraUri = uri
+            takePictureLauncher.launch(uri)
+        }
+    }
+
+    fun launchCamera() {
+        val hasPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+        if (hasPermission) {
+            val uri = createCameraCaptureUri(context)
+            pendingCameraUri = uri
+            takePictureLauncher.launch(uri)
+        } else {
+            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
         }
     }
 
@@ -71,7 +114,7 @@ fun PhotosScreen(
             )
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = { pickImageLauncher.launch("image/*") }) {
+            FloatingActionButton(onClick = { showSourcePicker = true }) {
                 if (uiState.isUploading) {
                     CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
                 } else {
@@ -109,6 +152,59 @@ fun PhotosScreen(
             }
         }
     }
+
+    if (showSourcePicker) {
+        PhotoSourceDialog(
+            onTakePhoto = { showSourcePicker = false; launchCamera() },
+            onChooseFromGallery = { showSourcePicker = false; pickImageLauncher.launch("image/*") },
+            onDismiss = { showSourcePicker = false },
+        )
+    }
+}
+
+@Composable
+private fun PhotoSourceDialog(
+    onTakePhoto: () -> Unit,
+    onChooseFromGallery: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Add a photo") },
+        text = {
+            Column {
+                PhotoSourceOption(Icons.Default.CameraAlt, "Take a photo", onTakePhoto)
+                PhotoSourceOption(Icons.Default.PhotoLibrary, "Choose from gallery", onChooseFromGallery)
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+@Composable
+private fun PhotoSourceOption(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+        Text(label, style = MaterialTheme.typography.bodyLarge)
+    }
+}
+
+/**
+ * Creates a fresh, writable content:// Uri (via FileProvider) for the
+ * system Camera app to save its capture into — TakePicture() requires the
+ * destination Uri up front rather than returning one. Lives under cacheDir
+ * since the file is only a transient handoff to compressPhotoForUpload();
+ * nothing here is meant to survive past the current upload.
+ */
+private fun createCameraCaptureUri(context: Context): Uri {
+    val dir = File(context.cacheDir, "camera_captures").apply { mkdirs() }
+    val file = File(dir, "capture_${System.currentTimeMillis()}.jpg")
+    return FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
 }
 
 /**
