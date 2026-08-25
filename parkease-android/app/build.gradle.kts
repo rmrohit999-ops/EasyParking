@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -43,6 +45,16 @@ val hasReleaseSigningConfig: Boolean =
 // sheet that can never succeed.
 val razorpayKeyId: String = System.getenv("RAZORPAY_KEY_ID") ?: ""
 
+// Same local.properties -> manifest-placeholder pattern as core-maps'
+// own build.gradle.kts reads for BuildConfig — read independently here
+// too since manifest placeholders are only settable from the module that
+// owns the merged manifest (this one), not from a library module.
+val mapsApiKeyProperties = Properties().apply {
+    val file = rootProject.file("local.properties")
+    if (file.exists()) file.inputStream().use { load(it) }
+}
+val mapsApiKey: String = (mapsApiKeyProperties.getProperty("MAPS_API_KEY") ?: System.getenv("MAPS_API_KEY_ANDROID") ?: "").trim()
+
 android {
     namespace = "com.parkease.app"
     compileSdk = 36
@@ -55,6 +67,11 @@ android {
         versionName = "0.1.0"
 
         buildConfigField("String", "RAZORPAY_KEY_ID", "\"$razorpayKeyId\"")
+        // Resolves core-maps' AndroidManifest.xml `${MAPS_API_KEY}` placeholder.
+        // Blank -> the Maps SDK meta-data value is empty and never initializes;
+        // core-maps' own mapsConfigured() check is what UI code actually reads
+        // to decide whether to render a map at all (see MapsAvailability.kt).
+        manifestPlaceholders["MAPS_API_KEY"] = mapsApiKey
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

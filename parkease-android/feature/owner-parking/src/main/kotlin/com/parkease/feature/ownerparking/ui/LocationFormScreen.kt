@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.height
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material3.*
@@ -18,17 +19,19 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.parkease.core.location.LocationPermissionState
+import com.parkease.core.maps.LocationPickerMap
+import com.parkease.core.maps.mapsConfigured
 
 /**
- * Manual pin-drop, plus a "Use my current location" GPS shortcut backed by
- * core-location's DriverLocationClient (the same one-shot fix feature:
- * driver-search uses) and AddressGeocoder (platform Geocoder, no Maps API
- * key needed) — GPS fills the coordinates and reverse-geocoding fills the
- * address/city/state/postal code fields in one tap. All fields stay
- * editable either way, so GPS or geocoding failing/being denied never
- * blocks entering everything by hand. A full embedded map picker with a
- * draggable pin is a separate, bigger piece of work (needs a Google Maps
- * API key) not attempted here.
+ * A real draggable-pin map when a Maps API key is configured (tap or drag
+ * to move the pin, synced with the lat/lng fields below), plus in every
+ * case a "Use my current location" GPS shortcut backed by core-location's
+ * DriverLocationClient and AddressGeocoder (platform Geocoder, no Maps key
+ * needed) — GPS fills the coordinates and reverse-geocoding fills the
+ * address/city/state/postal code fields in one tap. The manual lat/lng
+ * fields stay editable either way, so a missing Maps key, denied location
+ * permission, or unavailable geocoding never blocks entering everything by
+ * hand — see mapsConfigured()'s doc comment for the exact fallback.
  */
 @Composable
 fun LocationFormScreen(
@@ -46,6 +49,7 @@ fun LocationFormScreen(
     var postalCode by remember { mutableStateOf("") }
     var entranceNotes by remember { mutableStateOf("") }
     var validationError by remember { mutableStateOf<String?>(null) }
+    var pendingConfirm by remember { mutableStateOf<PendingLocationSave?>(null) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
@@ -120,6 +124,23 @@ fun LocationFormScreen(
                 )
             }
 
+            if (mapsConfigured()) {
+                Text(
+                    "Tap or drag the pin to the exact parking entrance",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                LocationPickerMap(
+                    latitude = latitude.toDoubleOrNull(),
+                    longitude = longitude.toDoubleOrNull(),
+                    onLocationSelected = { lat, lng ->
+                        latitude = lat.toString()
+                        longitude = lng.toString()
+                    },
+                    modifier = Modifier.fillMaxWidth().height(280.dp),
+                )
+            }
+
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(
                     value = latitude,
@@ -136,11 +157,13 @@ fun LocationFormScreen(
                     modifier = Modifier.weight(1f),
                 )
             }
-            Text(
-                "Or open this address in your maps app, long-press the pin, and copy the coordinates shown.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            if (!mapsConfigured()) {
+                Text(
+                    "Map picker unavailable right now — enter coordinates manually, or open this address in your maps app, long-press the pin, and copy the coordinates shown.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
 
             OutlinedTextField(
                 value = addressLine,
@@ -183,7 +206,7 @@ fun LocationFormScreen(
                         else -> null
                     }
                     if (validationError == null && lat != null && lng != null) {
-                        viewModel.save(lat, lng, addressLine.trim(), city.trim(), state.trim(), postalCode.trim(), entranceNotes.trim())
+                        pendingConfirm = PendingLocationSave(lat, lng, addressLine.trim(), city.trim(), state.trim(), postalCode.trim(), entranceNotes.trim())
                     }
                 },
                 enabled = !uiState.isSaving,
@@ -197,4 +220,41 @@ fun LocationFormScreen(
             }
         }
     }
+
+    pendingConfirm?.let { pending ->
+        AlertDialog(
+            onDismissRequest = { pendingConfirm = null },
+            title = { Text("Is this the correct parking entrance?") },
+            text = {
+                Column {
+                    Text(pending.addressLine)
+                    Text("${pending.city}, ${pending.state} ${pending.postalCode}")
+                    Text(
+                        "${pending.latitude}, ${pending.longitude}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    pendingConfirm = null
+                    viewModel.save(pending.latitude, pending.longitude, pending.addressLine, pending.city, pending.state, pending.postalCode, pending.entranceNotes)
+                }) { Text("Confirm") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingConfirm = null }) { Text("Edit Location") }
+            },
+        )
+    }
 }
+
+private data class PendingLocationSave(
+    val latitude: Double,
+    val longitude: Double,
+    val addressLine: String,
+    val city: String,
+    val state: String,
+    val postalCode: String,
+    val entranceNotes: String,
+)
