@@ -34,6 +34,8 @@ data class ListingResultUi(
     val name: String,
     val addressLine: String,
     val city: String,
+    val latitude: Double,
+    val longitude: Double,
     val distanceMeters: Double,
     val sections: List<SectionResultUi>,
     val isFavorite: Boolean = false,
@@ -101,6 +103,8 @@ class DiscoveryRepository @Inject constructor(
                     name = listing.name,
                     addressLine = listing.addressLine,
                     city = listing.city,
+                    latitude = listing.latitude,
+                    longitude = listing.longitude,
                     distanceMeters = listing.distanceMeters,
                     isFavorite = listing.id in favoriteIds,
                     sections = listing.sections.map { s ->

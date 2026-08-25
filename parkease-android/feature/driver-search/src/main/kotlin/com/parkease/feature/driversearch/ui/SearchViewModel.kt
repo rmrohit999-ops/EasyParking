@@ -27,6 +27,8 @@ data class SearchUiState(
     val activeCategory: VehicleCategory? = null,
     val hasVehicle: Boolean = true,
     val errorMessage: String? = null,
+    val driverLatitude: Double? = null,
+    val driverLongitude: Double? = null,
 )
 
 @HiltViewModel
@@ -63,6 +65,7 @@ class SearchViewModel @Inject constructor(
                 is LocationResult.Success -> {
                     lastLat = locationResult.point.latitude
                     lastLng = locationResult.point.longitude
+                    _uiState.value = _uiState.value.copy(driverLatitude = lastLat, driverLongitude = lastLng)
                     runSearch()
                 }
                 LocationResult.PermissionDenied -> _uiState.value = _uiState.value.copy(

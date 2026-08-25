@@ -25,6 +25,8 @@ data class SearchListingResultResponse(
     val parkingType: String,
     val addressLine: String,
     val city: String,
+    val latitude: Double,
+    val longitude: Double,
     val distanceMeters: Double,
     val sections: List<SearchSectionResultResponse>,
 )

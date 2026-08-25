@@ -17,7 +17,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.google.android.gms.maps.model.LatLng
 import com.parkease.core.location.LocationPermissionState
+import com.parkease.core.maps.MapMarker
+import com.parkease.core.maps.MarkersMap
+import com.parkease.core.maps.mapsConfigured
 import com.parkease.feature.driversearch.data.ListingResultUi
 import com.parkease.feature.driversearch.data.SearchFilters
 import com.parkease.feature.driversearch.data.SectionResultUi
@@ -30,6 +34,7 @@ fun SearchScreen(
     viewModel: SearchViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    var showMap by remember { mutableStateOf(false) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
@@ -73,7 +78,13 @@ fun SearchScreen(
 
             FilterRow(filters = uiState.filters, onFiltersChanged = viewModel::setFilters)
 
+            if (mapsConfigured()) {
+                ViewToggleRow(showMap = showMap, onShowMapChanged = { showMap = it })
+            }
+
             Box(modifier = Modifier.fillMaxSize()) {
+                val driverLat = uiState.driverLatitude
+                val driverLng = uiState.driverLongitude
                 when {
                     uiState.isLoading -> CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
                     !uiState.hasVehicle -> Text(
@@ -83,6 +94,25 @@ fun SearchScreen(
                     uiState.results.isEmpty() -> Text(
                         "No compatible parking found nearby. Try widening your filters.",
                         modifier = Modifier.align(Alignment.Center).padding(32.dp),
+                    )
+                    showMap && mapsConfigured() && driverLat != null && driverLng != null -> MarkersMap(
+                        markers = uiState.results.map { listing ->
+                            MapMarker(
+                                id = listing.id,
+                                position = LatLng(listing.latitude, listing.longitude),
+                                title = listing.name,
+                                snippet = listing.sections.minByOrNull { it.hourlyRate.minorUnits }
+                                    ?.let { "${it.hourlyRate.toDisplayString()}/hr · ${formatDistance(listing.distanceMeters)}" }
+                                    ?: formatDistance(listing.distanceMeters),
+                            )
+                        },
+                        cameraCenter = LatLng(driverLat, driverLng),
+                        modifier = Modifier.fillMaxSize(),
+                        // Multi-section listings need the list view to pick a
+                        // specific section to book — a pin represents the whole
+                        // listing, so tapping one hands the user back to the
+                        // list rather than guessing which section they meant.
+                        onMarkerClick = { showMap = false },
                     )
                     else -> LazyColumn(
                         contentPadding = PaddingValues(16.dp),
@@ -120,6 +150,17 @@ private fun PermissionRationale(onRequestPermission: () -> Unit) {
         Text("ParkEase needs your location to find nearby parking and give directions.", textAlign = androidx.compose.ui.text.style.TextAlign.Center)
         Spacer(Modifier.height(16.dp))
         Button(onClick = onRequestPermission) { Text("Enable Location") }
+    }
+}
+
+@Composable
+private fun ViewToggleRow(showMap: Boolean, onShowMapChanged: (Boolean) -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        FilterChip(selected = !showMap, onClick = { onShowMapChanged(false) }, label = { Text("List") })
+        FilterChip(selected = showMap, onClick = { onShowMapChanged(true) }, label = { Text("Map") })
     }
 }
 
