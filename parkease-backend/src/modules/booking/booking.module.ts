@@ -4,6 +4,7 @@ import { BookingService } from './booking.service';
 import { BookingExpiryProducer } from './booking-expiry.queue';
 import { BookingExpiryProcessor } from './booking-expiry.processor';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { RealtimeModule } from '../realtime/realtime.module';
 
 /**
  * BookingModule — real (Milestone 6: availability and booking). The
@@ -22,7 +23,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
  * change already passes through — see BookingService.notifyOnTransition.
  */
 @Module({
-  imports: [NotificationsModule],
+  imports: [NotificationsModule, RealtimeModule],
   controllers: [BookingController],
   providers: [BookingService, BookingExpiryProducer, BookingExpiryProcessor],
   exports: [BookingService],

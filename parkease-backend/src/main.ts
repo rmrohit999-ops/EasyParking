@@ -9,6 +9,7 @@ import { AppModule } from './app.module';
 import { GlobalExceptionFilter } from './common/filters/http-exception.filter';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { AppConfig } from './common/config/configuration';
+import { RedisIoAdapter } from './common/realtime/redis-io.adapter';
 
 async function bootstrap() {
   // rawBody: true keeps Nest's normal JSON body parsing (req.body) but
@@ -57,6 +58,14 @@ async function bootstrap() {
     );
   }
   app.enableCors({ origin: corsOrigin, credentials: true });
+
+  // Redis-backed Socket.IO adapter — required for RealtimeGateway to fan
+  // events out correctly the moment this deploys with more than one
+  // instance (Railway can scale replicas; without this, a user connected
+  // to instance B never receives an event emitted from instance A).
+  const redisIoAdapter = new RedisIoAdapter(app);
+  await redisIoAdapter.connectToRedis();
+  app.useWebSocketAdapter(redisIoAdapter);
 
   app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
 

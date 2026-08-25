@@ -8,6 +8,7 @@ import { OCCUPIED_BOOKING_STATUSES, RESERVED_BOOKING_STATUSES, TERMINAL_BOOKING_
 import { BookingExpiryProducer } from './booking-expiry.queue';
 import { CancelBookingDto, ConfirmBookingDto, CreateHoldDto, CreateInstantBookingDto } from './dto/booking.dto';
 import { NotificationsService } from '../notifications/notifications.service';
+import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { computePayableBreakdown } from '../payments/pricing';
 import { Money } from '../../common/money/money';
 
@@ -20,6 +21,7 @@ export class BookingService {
     private readonly configService: ConfigService<AppConfig, true>,
     private readonly expiryProducer: BookingExpiryProducer,
     private readonly notificationsService: NotificationsService,
+    private readonly realtimeGateway: RealtimeGateway,
   ) {}
 
   // ---------------------------------------------------------------------
@@ -538,6 +540,24 @@ export class BookingService {
     // transition itself must commit and return regardless of whether a
     // notification goes out at all.
     void this.notifyOnTransition(view.driverId, newStatus).catch(() => undefined);
+
+    // Same best-effort rule as the notification above. Only fires when
+    // capacity actually moved (not every status change does — e.g.
+    // PARKING_ACTIVE/CHECKED_OUT don't touch reserved/occupied counts) so
+    // an owner/attendant dashboard watching this listing doesn't get
+    // spurious "availability changed" events for transitions that didn't
+    // change any number it's showing.
+    if (reservedDelta !== 0 || occupiedDelta !== 0) {
+      try {
+        this.realtimeGateway.emitToListing(view.parkingId, 'availability_changed', {
+          sectionId: view.sectionId,
+          bookingId: view.id,
+          newStatus,
+        });
+      } catch (err) {
+        this.logger.warn(`Realtime listing emit failed for parking ${view.parkingId}: ${(err as Error).message}`);
+      }
+    }
 
     return view;
   }

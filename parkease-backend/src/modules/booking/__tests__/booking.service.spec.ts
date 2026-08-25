@@ -80,7 +80,8 @@ function buildService(prisma: any) {
   const expiryProducer = { scheduleExpiry: async () => undefined } as any;
   const configService = { get: () => ({ bookingHoldTtlSeconds: 600 }) } as any;
   const notificationsService = { send: async () => undefined } as any;
-  return new BookingService(prisma, configService, expiryProducer, notificationsService);
+  const realtimeGateway = { emitToUser: () => undefined, emitToListing: () => undefined } as any;
+  return new BookingService(prisma, configService, expiryProducer, notificationsService, realtimeGateway);
 }
 
 function twoWheelerSection(overrides: Partial<any> = {}) {

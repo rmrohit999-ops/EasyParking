@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { NotificationChannel } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { PUSH_PROVIDER_SERVICE, PushProvider } from './provider/push-provider.interface';
 import { UpdateNotificationPreferenceDto } from './dto/notifications.dto';
 
@@ -32,6 +33,7 @@ export class NotificationsService {
   constructor(
     private readonly prisma: PrismaService,
     @Inject(PUSH_PROVIDER_SERVICE) private readonly pushProvider: PushProvider,
+    private readonly realtimeGateway: RealtimeGateway,
   ) {}
 
   // ---------------------------------------------------------------------
@@ -69,6 +71,23 @@ export class NotificationsService {
         data: (params.data ?? undefined) as never,
       },
     });
+
+    // Best-effort, same "never let this fail the caller" rule as the push
+    // send below — a client with no live socket connection just doesn't
+    // get this particular event and falls back to push/the inbox, exactly
+    // like it always has.
+    try {
+      this.realtimeGateway.emitToUser(params.userId, 'notification', {
+        category: params.category,
+        type: params.type,
+        title: params.title,
+        body: params.body,
+        deepLink: params.deepLink,
+        data: params.data,
+      });
+    } catch (err) {
+      this.logger.warn(`Realtime emit failed for user ${params.userId}, category ${params.category}: ${(err as Error).message}`);
+    }
 
     try {
       const pushEnabled = await this.isChannelEnabled(params.userId, params.category, 'PUSH');

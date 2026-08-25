@@ -30,6 +30,7 @@ import { ReportsModule } from './modules/reports/reports.module';
 import { AuditModule } from './modules/audit/audit.module';
 import { ConfigModule as BusinessConfigModule } from './modules/config/config.module';
 import { StorageModule } from './modules/storage/storage.module';
+import { RealtimeModule } from './modules/realtime/realtime.module';
 
 @Module({
   imports: [
@@ -85,6 +86,7 @@ import { StorageModule } from './modules/storage/storage.module';
     AuditModule,
     BusinessConfigModule,
     StorageModule,
+    RealtimeModule,
   ],
 })
 export class AppModule implements NestModule {

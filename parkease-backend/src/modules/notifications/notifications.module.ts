@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AppConfig } from '../../common/config/configuration';
+import { RealtimeModule } from '../realtime/realtime.module';
 import { NotificationsController } from './notifications.controller';
 import { NotificationsService } from './notifications.service';
 import { PUSH_PROVIDER_SERVICE } from './provider/push-provider.interface';
@@ -18,6 +19,7 @@ import { NullPushProviderService } from './provider/null-push-provider.service';
  * dispute resolutions — see each of those modules' own wiring).
  */
 @Module({
+  imports: [RealtimeModule],
   controllers: [NotificationsController],
   providers: [
     NotificationsService,
