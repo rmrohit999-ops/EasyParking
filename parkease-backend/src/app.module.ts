@@ -31,6 +31,7 @@ import { AuditModule } from './modules/audit/audit.module';
 import { ConfigModule as BusinessConfigModule } from './modules/config/config.module';
 import { StorageModule } from './modules/storage/storage.module';
 import { RealtimeModule } from './modules/realtime/realtime.module';
+import { MapsQuotaModule } from './modules/maps-quota/maps-quota.module';
 
 @Module({
   imports: [
@@ -87,6 +88,7 @@ import { RealtimeModule } from './modules/realtime/realtime.module';
     BusinessConfigModule,
     StorageModule,
     RealtimeModule,
+    MapsQuotaModule,
   ],
 })
 export class AppModule implements NestModule {

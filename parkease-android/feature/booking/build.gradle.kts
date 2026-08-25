@@ -22,6 +22,7 @@ dependencies {
     implementation(project(":core:core-model"))
     implementation(project(":core:core-network"))
     implementation(project(":core:core-ui"))
+    implementation(project(":core:core-maps"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.compose)

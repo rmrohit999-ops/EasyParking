@@ -9,6 +9,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CurrencyRupee
+import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.PeopleAlt
 import androidx.compose.material.icons.filled.PendingActions
 import androidx.compose.material3.*
@@ -27,6 +28,7 @@ fun AdminHomeScreen(
     onOpenUsers: () -> Unit,
     onOpenPendingListings: () -> Unit,
     onOpenCashSummary: () -> Unit,
+    onOpenMapsQuota: () -> Unit,
     onSignOut: () -> Unit,
     viewModel: AdminHomeViewModel = hiltViewModel(),
 ) {
@@ -49,6 +51,7 @@ fun AdminHomeScreen(
                     onOpenUsers = onOpenUsers,
                     onOpenPendingListings = onOpenPendingListings,
                     onOpenCashSummary = onOpenCashSummary,
+                    onOpenMapsQuota = onOpenMapsQuota,
                 )
             }
         }
@@ -78,6 +81,7 @@ private fun AdminHomeContent(
     onOpenUsers: () -> Unit,
     onOpenPendingListings: () -> Unit,
     onOpenCashSummary: () -> Unit,
+    onOpenMapsQuota: () -> Unit,
 ) {
     Column(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
@@ -124,6 +128,12 @@ private fun AdminHomeContent(
             title = "Cash Payments",
             subtitle = "Total collected, owner-wise breakdown, pending vs completed",
             onClick = onOpenCashSummary,
+        )
+        AdminActionCard(
+            icon = Icons.Default.Map,
+            title = "Maps API Quota",
+            subtitle = "Live usage vs daily safety cap, per Google Maps API",
+            onClick = onOpenMapsQuota,
         )
     }
 }

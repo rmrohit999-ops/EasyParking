@@ -15,6 +15,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.parkease.core.maps.launchNavigation
 import com.parkease.core.model.BookingStatus
 import com.parkease.feature.booking.data.BookingUi
 import com.parkease.feature.booking.data.PassUi
@@ -134,6 +135,24 @@ private fun BookingDetailContent(
         }
         booking.endTime?.let {
             Text("End: ${formatter.format(it.atZone(ZoneId.systemDefault()))}", style = MaterialTheme.typography.bodyMedium)
+        }
+
+        // ₹0-cost: hands off to the device's real maps app via Android
+        // Intent, never a billable Directions API call — see core-maps'
+        // NavigationLauncher. Shown while there's still somewhere to
+        // navigate TO (confirmed but not yet arrived), and only when the
+        // listing actually has a pinned location (a listing predating the
+        // location feature, or one never finished onboarding, might not).
+        val lat = booking.parkingLatitude
+        val lng = booking.parkingLongitude
+        if ((booking.status == BookingStatus.CONFIRMED || booking.status == BookingStatus.DRIVER_ARRIVING) && lat != null && lng != null) {
+            val navigationContext = LocalContext.current
+            OutlinedButton(
+                onClick = { launchNavigation(navigationContext, lat, lng, booking.parkingName) },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Navigate to Entrance")
+            }
         }
 
         booking.priceSnapshot?.let { snapshot ->

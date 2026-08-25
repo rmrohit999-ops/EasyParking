@@ -32,4 +32,7 @@ interface AdminApi {
 
     @GET("v1/admin/reports/cash-summary")
     suspend fun cashSummary(): AdminCashSummaryResponse
+
+    @GET("v1/admin/maps-quota")
+    suspend fun mapsQuotaUsage(): MapsQuotaSnapshotResponse
 }

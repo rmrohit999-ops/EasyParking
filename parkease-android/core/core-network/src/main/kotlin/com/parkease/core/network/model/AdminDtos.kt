@@ -59,3 +59,19 @@ data class AdminCashByOwnerResponse(
     val commissionMinorUnits: String,
     val netEarningsMinorUnits: String,
 )
+
+@JsonClass(generateAdapter = true)
+data class MapsQuotaSnapshotResponse(
+    val date: String,
+    val globallyTripped: Boolean,
+    val skus: List<MapsQuotaSkuUsageResponse>,
+)
+
+@JsonClass(generateAdapter = true)
+data class MapsQuotaSkuUsageResponse(
+    val sku: String,
+    val count: Int,
+    val cap: Int,
+    val percentUsed: Int,
+    val capReached: Boolean,
+)

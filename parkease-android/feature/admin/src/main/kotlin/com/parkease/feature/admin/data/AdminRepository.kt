@@ -50,6 +50,20 @@ data class CashSummaryUi(
     val byOwner: List<CashByOwnerUi>,
 )
 
+data class MapsQuotaSkuUi(
+    val sku: String,
+    val count: Int,
+    val cap: Int,
+    val percentUsed: Int,
+    val capReached: Boolean,
+)
+
+data class MapsQuotaSnapshotUi(
+    val date: String,
+    val globallyTripped: Boolean,
+    val skus: List<MapsQuotaSkuUi>,
+)
+
 sealed class AdminResult<out T> {
     data class Success<T>(val value: T) : AdminResult<T>()
     data class Error(val message: String) : AdminResult<Nothing>()
@@ -114,6 +128,15 @@ class AdminRepository @Inject constructor(
                     netEarnings = Money(BigInteger(it.netEarningsMinorUnits), r.currency),
                 )
             },
+        )
+    }
+
+    suspend fun mapsQuotaUsage(): AdminResult<MapsQuotaSnapshotUi> = runCatchingApi {
+        val r = adminApi.mapsQuotaUsage()
+        MapsQuotaSnapshotUi(
+            date = r.date,
+            globallyTripped = r.globallyTripped,
+            skus = r.skus.map { MapsQuotaSkuUi(it.sku, it.count, it.cap, it.percentUsed, it.capReached) },
         )
     }
 

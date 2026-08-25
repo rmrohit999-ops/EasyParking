@@ -63,6 +63,8 @@ export const envValidationSchema = Joi.object({
   PAYMENT_ENV: Joi.string().valid('test', 'live').default('test'),
 
   MAPS_API_KEY_SERVER: Joi.string().allow('').default(''),
+  MAPS_QUOTA_DAILY_SAFETY_CAP: Joi.number().integer().positive().default(260),
+  MAPS_BUDGET_WEBHOOK_SECRET: Joi.string().allow('').default(''),
 
   FCM_PROJECT_ID: Joi.string().allow('').default(''),
   FCM_SERVICE_ACCOUNT_JSON: Joi.string().allow('').default(''),

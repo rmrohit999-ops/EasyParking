@@ -44,6 +44,8 @@ data class BookingResponse(
     val vehicleRegistrationNumber: String?,
     val driverContact: String?,
     val parkingName: String?,
+    val parkingLatitude: Double?,
+    val parkingLongitude: Double?,
     val cashAmountMinorUnits: String?,
     val cashConfirmedAt: String?,
 )

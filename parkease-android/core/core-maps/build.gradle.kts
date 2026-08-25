@@ -44,4 +44,7 @@ dependencies {
     // public signature (the defaultCenter parameter), so consumers need it
     // on their compile classpath too, not just core-maps' own.
     api(libs.play.services.maps)
+
+    testImplementation(libs.junit)
+    testImplementation(libs.truth)
 }

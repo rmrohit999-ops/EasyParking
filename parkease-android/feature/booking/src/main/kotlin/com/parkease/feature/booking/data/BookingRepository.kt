@@ -38,6 +38,8 @@ data class BookingUi(
     val vehicleRegistrationNumber: String?,
     val driverContact: String?,
     val parkingName: String?,
+    val parkingLatitude: Double?,
+    val parkingLongitude: Double?,
     val cashAmount: Money?,
     val cashConfirmedAt: Instant?,
 )
@@ -245,6 +247,8 @@ private fun com.parkease.core.network.model.BookingResponse.toUi() = BookingUi(
     vehicleRegistrationNumber = vehicleRegistrationNumber,
     driverContact = driverContact,
     parkingName = parkingName,
+    parkingLatitude = parkingLatitude,
+    parkingLongitude = parkingLongitude,
     cashAmount = cashAmountMinorUnits?.let { Money(BigInteger(it)) },
     cashConfirmedAt = cashConfirmedAt?.let { runCatching { Instant.parse(it) }.getOrNull() },
 )

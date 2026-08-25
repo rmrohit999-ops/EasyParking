@@ -52,7 +52,7 @@ export interface AppConfig {
     isConfigured: boolean;
   };
 
-  maps: { serverApiKey: string; isConfigured: boolean };
+  maps: { serverApiKey: string; isConfigured: boolean; quotaDailySafetyCap: number; budgetWebhookSecret: string };
 
   push: { fcmProjectId: string; fcmServiceAccountJson: string; isConfigured: boolean };
 
@@ -215,6 +215,8 @@ export default (): AppConfig => ({
   maps: {
     serverApiKey: process.env.MAPS_API_KEY_SERVER ?? '',
     isConfigured: Boolean(process.env.MAPS_API_KEY_SERVER),
+    quotaDailySafetyCap: parseInt(process.env.MAPS_QUOTA_DAILY_SAFETY_CAP ?? '260', 10),
+    budgetWebhookSecret: process.env.MAPS_BUDGET_WEBHOOK_SECRET ?? '',
   },
 
   push: {

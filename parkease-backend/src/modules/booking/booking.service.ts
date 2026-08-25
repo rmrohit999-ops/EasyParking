@@ -689,7 +689,7 @@ function assertCompatible(
 const BOOKING_VIEW_INCLUDE = {
   vehicle: { select: { registration_number: true } },
   driver: { select: { email: true, phone: true } },
-  parking: { select: { name: true, owner_id: true } },
+  parking: { select: { name: true, owner_id: true, location: { select: { latitude: true, longitude: true } } } },
   cash_collections: { select: { amount: true, confirmed_at: true } },
 } satisfies Prisma.BookingInclude;
 
@@ -719,7 +719,7 @@ function toBookingView(b: {
   // email/phone is the same "who is this" fallback the admin users list
   // already uses.
   driver?: { phone: string | null; email: string | null } | null;
-  parking?: { name: string } | null;
+  parking?: { name: string; location?: { latitude: number; longitude: number } | null } | null;
   cash_collections?: { amount: bigint; confirmed_at: Date | null }[];
 }) {
   const cashCollection = b.cash_collections?.[0];
@@ -742,6 +742,8 @@ function toBookingView(b: {
     vehicleRegistrationNumber: b.vehicle?.registration_number ?? null,
     driverContact: b.driver?.email ?? b.driver?.phone ?? null,
     parkingName: b.parking?.name ?? null,
+    parkingLatitude: b.parking?.location?.latitude ?? null,
+    parkingLongitude: b.parking?.location?.longitude ?? null,
     cashAmountMinorUnits: cashCollection ? cashCollection.amount.toString() : null,
     cashConfirmedAt: cashCollection?.confirmed_at ?? null,
   };
