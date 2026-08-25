@@ -28,6 +28,7 @@ import com.parkease.feature.admin.AdminRoutes
 import com.parkease.feature.admin.adminGraph
 import com.parkease.feature.auth.AuthRoutes
 import com.parkease.feature.auth.authGraph
+import com.parkease.driver.home.DriverHomeScreen
 import com.parkease.feature.booking.BookingRoutes
 import com.parkease.feature.booking.bookingGraph
 import com.parkease.feature.driversearch.DriverSearchRoutes
@@ -96,8 +97,13 @@ fun RootNavHost(modifier: Modifier = Modifier, viewModel: RootNavViewModel = hil
             navController.navigate(CUSTOMER_HOME_ROUTE) { popUpTo(0) { inclusive = true } }
         }
         composable(CUSTOMER_HOME_ROUTE) {
-            CustomerHomeScreen(
-                onFindParking = { navController.navigate(DriverSearchRoutes.GRAPH) },
+            DriverHomeScreen(
+                onBookSection = { sectionId, isInstant ->
+                    navController.navigate(BookingRoutes.confirm(sectionId, isInstant))
+                },
+                onBookAdvance = { sectionId, startEpochMillis, endEpochMillis ->
+                    navController.navigate(BookingRoutes.confirm(sectionId, isInstant = false, startEpochMillis = startEpochMillis, endEpochMillis = endEpochMillis))
+                },
                 onMyBookings = { navController.navigate(BookingRoutes.GRAPH) },
                 onMyVehicles = { navController.navigate(VehiclesRoutes.GRAPH) },
                 onNotifications = { navController.navigate(NotificationsRoutes.GRAPH) },

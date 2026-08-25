@@ -30,6 +30,10 @@ class BookingConfirmViewModel @Inject constructor(
     val sectionId: String = checkNotNull(savedStateHandle["sectionId"]) { "sectionId is required" }
     val isInstant: Boolean = savedStateHandle["isInstant"] ?: false
 
+    /** Set only when navigated here from a flow that already resolved a date/time (e.g. advance-booking destination search) — null falls back to the screen's own "now+15min / now+2h" defaults. */
+    val prefilledStartEpochMillis: Long? = savedStateHandle.get<String>("startEpochMillis")?.toLongOrNull()
+    val prefilledEndEpochMillis: Long? = savedStateHandle.get<String>("endEpochMillis")?.toLongOrNull()
+
     private val _uiState = MutableStateFlow(BookingConfirmUiState())
     val uiState: StateFlow<BookingConfirmUiState> = _uiState.asStateFlow()
 

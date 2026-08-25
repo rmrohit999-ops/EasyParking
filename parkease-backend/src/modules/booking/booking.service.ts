@@ -499,7 +499,16 @@ export class BookingService {
     const run = async (tx: Prisma.TransactionClient) => {
       const result = await tx.booking.updateMany({
         where: { id: bookingId, status: expectedCurrentStatus },
-        data: { status: newStatus },
+        data: {
+          status: newStatus,
+          // Real anchor timestamps for an active-session timer — these
+          // columns existed unwritten since Milestone 0; stamping them here
+          // (the single choke point every transition passes through) rather
+          // than in QrService keeps every CHECKED_IN/CHECKED_OUT caller
+          // consistent, including any future non-QR path.
+          ...(newStatus === 'CHECKED_IN' ? { actual_check_in_at: new Date() } : {}),
+          ...(newStatus === 'CHECKED_OUT' ? { actual_check_out_at: new Date() } : {}),
+        },
       });
       if (result.count === 0) {
         throw new ConflictException('This booking was already updated by another request. Please refresh and try again.');

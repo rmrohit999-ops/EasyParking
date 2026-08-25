@@ -20,18 +20,17 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.parkease.core.location.LocationPermissionState
 import com.parkease.core.maps.LocationPickerMap
-import com.parkease.core.maps.mapsConfigured
 
 /**
- * A real draggable-pin map when a Maps API key is configured (tap or drag
- * to move the pin, synced with the lat/lng fields below), plus in every
- * case a "Use my current location" GPS shortcut backed by core-location's
- * DriverLocationClient and AddressGeocoder (platform Geocoder, no Maps key
- * needed) — GPS fills the coordinates and reverse-geocoding fills the
- * address/city/state/postal code fields in one tap. The manual lat/lng
- * fields stay editable either way, so a missing Maps key, denied location
- * permission, or unavailable geocoding never blocks entering everything by
- * hand — see mapsConfigured()'s doc comment for the exact fallback.
+ * A real draggable-pin osmdroid map (tap or drag to move the pin, synced
+ * with the lat/lng fields below — no API key needed, unlike the Google
+ * Maps Compose version this used to be), plus a "Use my current location"
+ * GPS shortcut backed by core-location's DriverLocationClient and
+ * AddressGeocoder (platform Geocoder, no Maps key needed either) — GPS
+ * fills the coordinates and reverse-geocoding fills the address/city/
+ * state/postal code fields in one tap. The manual lat/lng fields stay
+ * editable either way, so a denied location permission or unavailable
+ * geocoding never blocks entering everything by hand.
  */
 @Composable
 fun LocationFormScreen(
@@ -124,22 +123,20 @@ fun LocationFormScreen(
                 )
             }
 
-            if (mapsConfigured()) {
-                Text(
-                    "Tap or drag the pin to the exact parking entrance",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                LocationPickerMap(
-                    latitude = latitude.toDoubleOrNull(),
-                    longitude = longitude.toDoubleOrNull(),
-                    onLocationSelected = { lat, lng ->
-                        latitude = lat.toString()
-                        longitude = lng.toString()
-                    },
-                    modifier = Modifier.fillMaxWidth().height(280.dp),
-                )
-            }
+            Text(
+                "Tap or drag the pin to the exact parking entrance",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            LocationPickerMap(
+                latitude = latitude.toDoubleOrNull(),
+                longitude = longitude.toDoubleOrNull(),
+                onLocationSelected = { lat, lng ->
+                    latitude = lat.toString()
+                    longitude = lng.toString()
+                },
+                modifier = Modifier.fillMaxWidth().height(280.dp),
+            )
 
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(
@@ -155,13 +152,6 @@ fun LocationFormScreen(
                     label = { Text("Longitude") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     modifier = Modifier.weight(1f),
-                )
-            }
-            if (!mapsConfigured()) {
-                Text(
-                    "Map picker unavailable right now — enter coordinates manually, or open this address in your maps app, long-press the pin, and copy the coordinates shown.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
 

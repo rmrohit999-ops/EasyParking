@@ -23,6 +23,9 @@ dependencies {
     implementation(project(":core:core-network"))
     implementation(project(":core:core-ui"))
     implementation(project(":core:core-maps"))
+    implementation(project(":core:core-location"))
+    implementation(project(":core:core-datastore"))
+    implementation(libs.androidx.work.runtime.ktx)
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
@@ -35,6 +38,7 @@ dependencies {
     implementation(libs.retrofit.core)
     implementation(libs.androidx.activity.compose)
     implementation(libs.razorpay.checkout)
+    implementation(libs.zxing.core)
 
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)

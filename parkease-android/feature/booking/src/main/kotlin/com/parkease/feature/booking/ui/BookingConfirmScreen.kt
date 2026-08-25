@@ -27,8 +27,20 @@ fun BookingConfirmScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
-    var startDateTime by remember { mutableStateOf(LocalDateTime.now().plusMinutes(15)) }
-    var endDateTime by remember { mutableStateOf(LocalDateTime.now().plusHours(2)) }
+    var startDateTime by remember {
+        mutableStateOf(
+            viewModel.prefilledStartEpochMillis
+                ?.let { LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(it), ZoneId.systemDefault()) }
+                ?: LocalDateTime.now().plusMinutes(15),
+        )
+    }
+    var endDateTime by remember {
+        mutableStateOf(
+            viewModel.prefilledEndEpochMillis
+                ?.let { LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(it), ZoneId.systemDefault()) }
+                ?: LocalDateTime.now().plusHours(2),
+        )
+    }
 
     LaunchedEffect(uiState.confirmedBooking) {
         uiState.confirmedBooking?.let { onBookingConfirmed(it.id) }

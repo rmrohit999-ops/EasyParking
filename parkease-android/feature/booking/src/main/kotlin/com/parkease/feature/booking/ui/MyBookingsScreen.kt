@@ -7,6 +7,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -26,6 +29,10 @@ fun MyBookingsScreen(
     viewModel: MyBookingsViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    // Client-side split only — BookingStatus.isTerminal is already real
+    // (COMPLETED/CANCELLED/etc.), no backend change needed for "history".
+    var showActive by remember { mutableStateOf(true) }
+    val visibleBookings = uiState.bookings.filter { (it.status?.isTerminal ?: false) != showActive }
 
     Scaffold(
         topBar = {
@@ -35,29 +42,39 @@ fun MyBookingsScreen(
             )
         },
     ) { padding ->
-        Box(modifier = Modifier.fillMaxSize().padding(padding)) {
-            when {
-                uiState.isLoading -> CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
-                uiState.bookings.isEmpty() -> Text(
-                    "No bookings yet. Find parking to get started.",
-                    modifier = Modifier.align(Alignment.Center).padding(32.dp),
-                )
-                else -> LazyColumn(
-                    contentPadding = PaddingValues(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    items(uiState.bookings, key = { it.id }) { booking ->
-                        BookingRow(booking = booking, onClick = { onOpenBooking(booking.id) })
-                    }
-                }
+        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                FilterChip(selected = showActive, onClick = { showActive = true }, label = { Text("Active") })
+                FilterChip(selected = !showActive, onClick = { showActive = false }, label = { Text("History") })
             }
 
-            uiState.errorMessage?.let {
-                Text(
-                    it,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp),
-                )
+            Box(modifier = Modifier.fillMaxSize()) {
+                when {
+                    uiState.isLoading -> CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+                    visibleBookings.isEmpty() -> Text(
+                        if (showActive) "No active bookings right now." else "No past bookings yet.",
+                        modifier = Modifier.align(Alignment.Center).padding(32.dp),
+                    )
+                    else -> LazyColumn(
+                        contentPadding = PaddingValues(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        items(visibleBookings, key = { it.id }) { booking ->
+                            BookingRow(booking = booking, onClick = { onOpenBooking(booking.id) })
+                        }
+                    }
+                }
+
+                uiState.errorMessage?.let {
+                    Text(
+                        it,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp),
+                    )
+                }
             }
         }
     }

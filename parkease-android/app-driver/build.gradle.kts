@@ -1,5 +1,3 @@
-import java.util.Properties
-
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -23,12 +21,6 @@ val hasReleaseSigningConfig: Boolean =
 
 val razorpayKeyId: String = System.getenv("RAZORPAY_KEY_ID") ?: ""
 
-val mapsApiKeyProperties = Properties().apply {
-    val file = rootProject.file("local.properties")
-    if (file.exists()) file.inputStream().use { load(it) }
-}
-val mapsApiKey: String = (mapsApiKeyProperties.getProperty("MAPS_API_KEY") ?: System.getenv("MAPS_API_KEY_ANDROID") ?: "").trim()
-
 android {
     namespace = "com.parkease.driver"
     compileSdk = 36
@@ -41,7 +33,6 @@ android {
         versionName = "0.1.0"
 
         buildConfigField("String", "RAZORPAY_KEY_ID", "\"$razorpayKeyId\"")
-        manifestPlaceholders["MAPS_API_KEY"] = mapsApiKey
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -156,6 +147,7 @@ dependencies {
     implementation(libs.firebase.analytics.ktx)
 
     implementation(libs.razorpay.checkout)
+    implementation(libs.coil.compose)
 
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)

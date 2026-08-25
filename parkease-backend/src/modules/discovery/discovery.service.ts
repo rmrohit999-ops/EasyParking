@@ -1,6 +1,7 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { ApprovalStatus, ListingStatus, VehicleCategory, VehicleType } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { STORAGE_SERVICE, StorageService } from '../storage/storage.service';
 import { SearchParkingQueryDto } from './dto/discovery.dto';
 
 export interface SearchRow {
@@ -31,7 +32,10 @@ export interface SearchRow {
 
 @Injectable()
 export class DiscoveryService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(STORAGE_SERVICE) private readonly storage: StorageService,
+  ) {}
 
   /**
    * A search targets either a specific vehicle the driver owns (the normal
@@ -172,11 +176,33 @@ export class DiscoveryService {
     const start = (page - 1) * pageSize;
     const pageItems = allListings.slice(start, start + pageSize);
 
+    // Only for the page actually being returned, never the full match set
+    // — a presigned URL is generated per listing, so this stays bounded to
+    // pageSize (default 20) regardless of how many listings matched.
+    // Storage being unconfigured must never fail the whole search — it
+    // already reports "unavailable" honestly everywhere else (uploads,
+    // listing photos), so here it just means no primaryPhotoUrl, exactly
+    // like a listing that genuinely has no photos yet.
+    const photoUrlByListing = new Map<string, string>();
+    if (this.storage.isConfigured && pageItems.length > 0) {
+      const primaryPhotos = await this.prisma.parkingPhoto.findMany({
+        where: { parking_id: { in: pageItems.map((l) => l.id) }, status: 'ACTIVE' },
+        distinct: ['parking_id'],
+        orderBy: { uploaded_at: 'asc' },
+        select: { parking_id: true, storage_key: true },
+      });
+      await Promise.all(
+        primaryPhotos.map(async (p) => {
+          photoUrlByListing.set(p.parking_id, await this.storage.createReadUrl(p.storage_key));
+        }),
+      );
+    }
+
     return {
       page,
       pageSize,
       totalListings: allListings.length,
-      results: pageItems,
+      results: pageItems.map((item) => ({ ...item, primaryPhotoUrl: photoUrlByListing.get(item.id) ?? null })),
     };
   }
 

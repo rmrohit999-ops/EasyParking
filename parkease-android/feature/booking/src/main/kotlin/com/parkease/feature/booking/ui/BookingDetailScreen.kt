@@ -29,6 +29,8 @@ import java.time.format.DateTimeFormatter
 @Composable
 fun BookingDetailScreen(
     onBack: () -> Unit,
+    onOpenPass: (bookingId: String) -> Unit,
+    onOpenActiveSession: (bookingId: String) -> Unit,
     viewModel: BookingDetailViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -84,6 +86,8 @@ fun BookingDetailScreen(
                     passLoading = uiState.passLoading,
                     passMessage = uiState.passMessage,
                     onShowPass = viewModel::showPass,
+                    onOpenFullScreenPass = { onOpenPass(booking.id) },
+                    onOpenActiveSession = { onOpenActiveSession(booking.id) },
                     refunds = uiState.refunds,
                 )
             }
@@ -114,9 +118,12 @@ private fun BookingDetailContent(
     passLoading: Boolean,
     passMessage: String?,
     onShowPass: () -> Unit,
+    onOpenFullScreenPass: () -> Unit,
+    onOpenActiveSession: () -> Unit,
     refunds: List<RefundUi>,
 ) {
     val canCancel = booking.status == BookingStatus.PENDING_PAYMENT || booking.status == BookingStatus.CONFIRMED
+    val isActiveSession = booking.status == BookingStatus.CHECKED_IN || booking.status == BookingStatus.PARKING_ACTIVE
     val canPay = booking.status == BookingStatus.PENDING_PAYMENT
     val cashPending = booking.status == BookingStatus.PENDING_PAYMENT && booking.intendedPaymentMethod == "CASH"
     val cashPaid = booking.cashAmount != null
@@ -129,6 +136,12 @@ private fun BookingDetailContent(
     ) {
         Text(booking.status?.name ?: "UNKNOWN", style = MaterialTheme.typography.headlineSmall)
         Text("Type: ${booking.bookingType?.name ?: "UNKNOWN"}", style = MaterialTheme.typography.bodyMedium)
+
+        if (isActiveSession) {
+            Button(onClick = onOpenActiveSession, modifier = Modifier.fillMaxWidth()) {
+                Text("View Active Session")
+            }
+        }
 
         booking.startTime?.let {
             Text("Start: ${formatter.format(it.atZone(ZoneId.systemDefault()))}", style = MaterialTheme.typography.bodyMedium)
@@ -262,6 +275,7 @@ private fun BookingDetailContent(
                                 style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
                             )
                         }
+                        TextButton(onClick = onOpenFullScreenPass) { Text("View Full-Screen Pass") }
                     }
                 }
             }

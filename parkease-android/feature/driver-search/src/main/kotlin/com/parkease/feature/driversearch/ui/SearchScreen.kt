@@ -17,11 +17,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.google.android.gms.maps.model.LatLng
+import org.osmdroid.util.GeoPoint
 import com.parkease.core.location.LocationPermissionState
-import com.parkease.core.maps.MapMarker
-import com.parkease.core.maps.MarkersMap
-import com.parkease.core.maps.mapsConfigured
+import com.parkease.core.maps.MapPin
+import com.parkease.core.maps.OsmMap
 import com.parkease.feature.driversearch.data.ListingResultUi
 import com.parkease.feature.driversearch.data.SearchFilters
 import com.parkease.feature.driversearch.data.SectionResultUi
@@ -78,9 +77,7 @@ fun SearchScreen(
 
             FilterRow(filters = uiState.filters, onFiltersChanged = viewModel::setFilters)
 
-            if (mapsConfigured()) {
-                ViewToggleRow(showMap = showMap, onShowMapChanged = { showMap = it })
-            }
+            ViewToggleRow(showMap = showMap, onShowMapChanged = { showMap = it })
 
             Box(modifier = Modifier.fillMaxSize()) {
                 val driverLat = uiState.driverLatitude
@@ -95,24 +92,25 @@ fun SearchScreen(
                         "No compatible parking found nearby. Try widening your filters.",
                         modifier = Modifier.align(Alignment.Center).padding(32.dp),
                     )
-                    showMap && mapsConfigured() && driverLat != null && driverLng != null -> MarkersMap(
-                        markers = uiState.results.map { listing ->
-                            MapMarker(
+                    showMap && driverLat != null && driverLng != null -> OsmMap(
+                        pins = uiState.results.map { listing ->
+                            MapPin(
                                 id = listing.id,
-                                position = LatLng(listing.latitude, listing.longitude),
+                                position = GeoPoint(listing.latitude, listing.longitude),
                                 title = listing.name,
                                 snippet = listing.sections.minByOrNull { it.hourlyRate.minorUnits }
                                     ?.let { "${it.hourlyRate.toDisplayString()}/hr · ${formatDistance(listing.distanceMeters)}" }
                                     ?: formatDistance(listing.distanceMeters),
                             )
                         },
-                        cameraCenter = LatLng(driverLat, driverLng),
+                        cameraCenter = GeoPoint(driverLat, driverLng),
                         modifier = Modifier.fillMaxSize(),
+                        myLocationEnabled = true,
                         // Multi-section listings need the list view to pick a
                         // specific section to book — a pin represents the whole
                         // listing, so tapping one hands the user back to the
                         // list rather than guessing which section they meant.
-                        onMarkerClick = { showMap = false },
+                        onPinClick = { showMap = false },
                     )
                     else -> LazyColumn(
                         contentPadding = PaddingValues(16.dp),

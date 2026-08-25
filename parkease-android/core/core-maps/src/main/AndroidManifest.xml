@@ -1,17 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <application>
-        <!--
-            Consumed by the Maps SDK itself at runtime (not by our own code).
-            ${MAPS_API_KEY} is a manifest placeholder resolved by the app
-            module's own build.gradle.kts (which owns the merged manifest) —
-            see its manifestPlaceholders block. Left blank there, the SDK
-            fails to initialize; UI code never touches this value directly
-            and instead checks BuildConfig.MAPS_API_KEY (see MapsAvailability.kt)
-            to decide whether to render a map at all.
-        -->
-        <meta-data
-            android:name="com.google.android.geo.API_KEY"
-            android:value="${MAPS_API_KEY}" />
-    </application>
-</manifest>
+<!--
+    osmdroid needs no API key/manifest meta-data (unlike the Google Maps SDK
+    this module used to configure here) — INTERNET/ACCESS_NETWORK_STATE for
+    tile fetching and location permissions are already declared by each app
+    module (app-driver/app-partner), and osmdroid's own AAR manifest merges
+    in whatever it additionally needs.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" />

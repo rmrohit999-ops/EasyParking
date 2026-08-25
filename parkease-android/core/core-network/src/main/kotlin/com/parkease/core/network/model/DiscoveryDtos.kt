@@ -29,6 +29,8 @@ data class SearchListingResultResponse(
     val longitude: Double,
     val distanceMeters: Double,
     val sections: List<SearchSectionResultResponse>,
+    /** Presigned read URL for the listing's first active photo — null if it has none, or if storage isn't configured on this deployment. */
+    val primaryPhotoUrl: String?,
 )
 
 @JsonClass(generateAdapter = true)

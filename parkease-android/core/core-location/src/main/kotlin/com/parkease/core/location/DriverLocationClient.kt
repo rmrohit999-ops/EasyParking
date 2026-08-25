@@ -4,13 +4,20 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
+import android.os.Looper
 import androidx.core.content.ContextCompat
 import com.google.android.gms.location.CurrentLocationRequest
 import dagger.hilt.android.qualifiers.ApplicationContext
 import com.google.android.gms.location.FusedLocationProviderClient
+import com.google.android.gms.location.LocationCallback
+import com.google.android.gms.location.LocationRequest
+import com.google.android.gms.location.LocationResult as FusedLocationResult
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import kotlinx.coroutines.CancellableContinuation
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.suspendCancellableCoroutine
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -76,5 +83,39 @@ class DriverLocationClient @Inject constructor(
                     if (continuation.isActive) continuation.resume(LocationResult.LocationUnavailable)
                 }
         }
+    }
+
+    /**
+     * A live stream of fixes, for screens that need to track movement (the
+     * my-location dot, and the active-session "walk back to my car" line
+     * recalculating as the driver actually walks) rather than a single
+     * point-in-time fix. Emits [LocationResult.PermissionDenied] once and
+     * completes if permission isn't held — callers already request
+     * permission via the same flow [getCurrentLocation] callers use before
+     * collecting this.
+     */
+    @SuppressLint("MissingPermission") // guarded by hasLocationPermission() below
+    fun observeLocation(intervalMillis: Long = 5000L): Flow<LocationResult> = callbackFlow {
+        if (!hasLocationPermission()) {
+            trySend(LocationResult.PermissionDenied)
+            close()
+            return@callbackFlow
+        }
+
+        val request = LocationRequest.Builder(Priority.PRIORITY_BALANCED_POWER_ACCURACY, intervalMillis).build()
+        val callback = object : LocationCallback() {
+            override fun onLocationResult(result: FusedLocationResult) {
+                val location = result.lastLocation
+                val point = if (location == null) {
+                    LocationResult.LocationUnavailable
+                } else {
+                    LocationResult.Success(GeoPoint(location.latitude, location.longitude, location.accuracy.takeIf { it > 0f }))
+                }
+                trySend(point)
+            }
+        }
+
+        fusedClient.requestLocationUpdates(request, callback, Looper.getMainLooper())
+        awaitClose { fusedClient.removeLocationUpdates(callback) }
     }
 }

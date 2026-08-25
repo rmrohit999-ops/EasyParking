@@ -38,6 +38,7 @@ data class ListingResultUi(
     val longitude: Double,
     val distanceMeters: Double,
     val sections: List<SectionResultUi>,
+    val primaryPhotoUrl: String?,
     val isFavorite: Boolean = false,
 )
 
@@ -106,6 +107,7 @@ class DiscoveryRepository @Inject constructor(
                     latitude = listing.latitude,
                     longitude = listing.longitude,
                     distanceMeters = listing.distanceMeters,
+                    primaryPhotoUrl = listing.primaryPhotoUrl,
                     isFavorite = listing.id in favoriteIds,
                     sections = listing.sections.map { s ->
                         SectionResultUi(
