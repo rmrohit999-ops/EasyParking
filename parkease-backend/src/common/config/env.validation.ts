@@ -32,6 +32,10 @@ export const envValidationSchema = Joi.object({
   PASSWORD_HASH_ALGO: Joi.string().valid('argon2id').default('argon2id'),
   GOOGLE_OAUTH_CLIENT_ID: Joi.string().allow('').default(''),
   GOOGLE_OAUTH_CLIENT_SECRET: Joi.string().allow('').default(''),
+  // Unset -> the SUPER_ADMIN elevation path in JwtAuthGuard never matches
+  // anyone (empty string can't equal a real email), i.e. no super-admin
+  // exists on this deployment until explicitly configured.
+  SUPER_ADMIN_EMAIL: Joi.string().email().allow('').default(''),
 
   // Feature-gating: optional. Absence disables the feature, never fakes it.
   SMS_PROVIDER: Joi.string().allow('').default(''),

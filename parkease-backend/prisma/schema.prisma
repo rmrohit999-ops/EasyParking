@@ -45,6 +45,11 @@ enum AppRole {
   OWNER
   ATTENDANT
   ADMIN
+  // Auto-granted (never self-service, never assignable by a plain ADMIN) to
+  // whichever account's verified email matches SUPER_ADMIN_EMAIL — see
+  // JwtAuthGuard. A SUPER_ADMIN account also always holds ADMIN, so every
+  // existing @Roles('ADMIN') endpoint keeps working unchanged.
+  SUPER_ADMIN
 }
 
 enum UserStatus {

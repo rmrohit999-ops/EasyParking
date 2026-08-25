@@ -1,8 +1,24 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { AppRole, UserStatus } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { ListUsersQueryDto, SuspendUserDto } from './dto/admin.dto';
+
+/** Roles an ADMIN may never suspend/reinstate — only SUPER_ADMIN can act on another admin account. */
+const ADMIN_TIER_ROLES: AppRole[] = ['ADMIN', 'SUPER_ADMIN'];
+
+/**
+ * A plain ADMIN may suspend/reinstate drivers, owners and attendants, but
+ * never another admin-tier account — only SUPER_ADMIN can. Exported
+ * standalone (pure — no Prisma/NestJS) so this decision is unit-testable
+ * without mocking the database.
+ */
+export function assertMayActOnAdminTier(callerRoles: string[], targetRoles: AppRole[]): void {
+  const targetIsAdminTier = targetRoles.some((r) => ADMIN_TIER_ROLES.includes(r));
+  if (targetIsAdminTier && !callerRoles.includes('SUPER_ADMIN')) {
+    throw new ForbiddenException('Only a super admin can suspend or reinstate an admin account.');
+  }
+}
 
 /**
  * AdminModule — real (Milestone 10). User management: search, detail,
@@ -51,10 +67,11 @@ export class AdminService {
     return toUserDetailView(user);
   }
 
-  async suspendUser(adminId: string, userId: string, dto: SuspendUserDto) {
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+  async suspendUser(adminId: string, callerRoles: string[], userId: string, dto: SuspendUserDto) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, include: { roles: { where: { status: 'ACTIVE' } } } });
     if (!user) throw new NotFoundException('User not found.');
     if (user.status === 'SUSPENDED') throw new ConflictException('This user is already suspended.');
+    assertMayActOnAdminTier(callerRoles, user.roles.map((r) => r.role));
 
     await this.prisma.$transaction([
       this.prisma.user.update({ where: { id: userId }, data: { status: 'SUSPENDED' } }),
@@ -74,10 +91,11 @@ export class AdminService {
     return this.getUser(userId);
   }
 
-  async reinstateUser(adminId: string, userId: string) {
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+  async reinstateUser(adminId: string, callerRoles: string[], userId: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, include: { roles: { where: { status: 'ACTIVE' } } } });
     if (!user) throw new NotFoundException('User not found.');
     if (user.status !== 'SUSPENDED') throw new ConflictException('This user is not currently suspended.');
+    assertMayActOnAdminTier(callerRoles, user.roles.map((r) => r.role));
 
     await this.prisma.user.update({ where: { id: userId }, data: { status: 'ACTIVE' } });
     await this.auditService.record({

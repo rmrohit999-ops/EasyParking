@@ -24,6 +24,7 @@ export interface AppConfig {
     refreshTtlSeconds: number;
     passwordHashAlgo: string;
     google: { clientId: string; clientSecret: string; isConfigured: boolean };
+    superAdminEmail: string;
   };
 
   otp: {
@@ -173,6 +174,7 @@ export default (): AppConfig => ({
       clientSecret: process.env.GOOGLE_OAUTH_CLIENT_SECRET ?? '',
       isConfigured: Boolean(process.env.GOOGLE_OAUTH_CLIENT_ID && process.env.GOOGLE_OAUTH_CLIENT_SECRET),
     },
+    superAdminEmail: (process.env.SUPER_ADMIN_EMAIL ?? '').trim().toLowerCase(),
   },
 
   otp: {

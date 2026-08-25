@@ -12,6 +12,7 @@ function buildConfigService(overrides: Partial<AppConfig['auth']> = {}): ConfigS
     refreshTtlSeconds: 3600,
     passwordHashAlgo: 'argon2id',
     google: { clientId: '', clientSecret: '', isConfigured: false },
+    superAdminEmail: '',
     ...overrides,
   };
   return { get: (key: string) => (key === 'auth' ? auth : undefined) } as unknown as ConfigService<AppConfig, true>;

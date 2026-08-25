@@ -11,14 +11,19 @@ import {
   UpdateFeatureFlagDto,
 } from './dto/config.dto';
 
+// Reads (GET) stay available to any ADMIN — the spec's own permission
+// matrix only lists "configure commissions, fees and taxes" under
+// SUPER_ADMIN, not plain ADMIN, so every write here is SUPER_ADMIN-only,
+// overriding the controller-level @Roles('ADMIN','SUPER_ADMIN') per route.
 @ApiTags('admin-config')
-@Roles('ADMIN')
+@Roles('ADMIN', 'SUPER_ADMIN')
 @Controller({ path: 'admin/config', version: '1' })
 export class ConfigController {
   constructor(private readonly configService: ConfigService) {}
 
   @Post('commission-policies')
-  @ApiOperation({ summary: 'Create a commission policy (supersedes, never edits in place)' })
+  @Roles('SUPER_ADMIN')
+  @ApiOperation({ summary: 'Create a commission policy (supersedes, never edits in place) — SUPER_ADMIN only' })
   createCommissionPolicy(@CurrentUser() admin: AuthenticatedUser, @Body() dto: CreateCommissionPolicyDto) {
     return this.configService.createCommissionPolicy(admin.id, dto);
   }
@@ -30,7 +35,8 @@ export class ConfigController {
   }
 
   @Post('tax-policies')
-  @ApiOperation({ summary: 'Create a tax policy (supersedes, never edits in place)' })
+  @Roles('SUPER_ADMIN')
+  @ApiOperation({ summary: 'Create a tax policy (supersedes, never edits in place) — SUPER_ADMIN only' })
   createTaxPolicy(@CurrentUser() admin: AuthenticatedUser, @Body() dto: CreateTaxPolicyDto) {
     return this.configService.createTaxPolicy(admin.id, dto);
   }
@@ -42,7 +48,8 @@ export class ConfigController {
   }
 
   @Post('cancellation-policies')
-  @ApiOperation({ summary: 'Create a cancellation refund-tier policy (supersedes, never edits in place)' })
+  @Roles('SUPER_ADMIN')
+  @ApiOperation({ summary: 'Create a cancellation refund-tier policy (supersedes, never edits in place) — SUPER_ADMIN only' })
   createCancellationPolicy(@CurrentUser() admin: AuthenticatedUser, @Body() dto: CreateCancellationPolicyDto) {
     return this.configService.createCancellationPolicy(admin.id, dto);
   }
@@ -54,7 +61,8 @@ export class ConfigController {
   }
 
   @Post('feature-flags')
-  @ApiOperation({ summary: 'Create a feature flag' })
+  @Roles('SUPER_ADMIN')
+  @ApiOperation({ summary: 'Create a feature flag — SUPER_ADMIN only' })
   createFeatureFlag(@CurrentUser() admin: AuthenticatedUser, @Body() dto: CreateFeatureFlagDto) {
     return this.configService.createFeatureFlag(admin.id, dto);
   }
@@ -66,7 +74,8 @@ export class ConfigController {
   }
 
   @Patch('feature-flags/:key')
-  @ApiOperation({ summary: 'Toggle/update a feature flag' })
+  @Roles('SUPER_ADMIN')
+  @ApiOperation({ summary: 'Toggle/update a feature flag — SUPER_ADMIN only' })
   updateFeatureFlag(@CurrentUser() admin: AuthenticatedUser, @Param('key') key: string, @Body() dto: UpdateFeatureFlagDto) {
     return this.configService.updateFeatureFlag(admin.id, key, dto);
   }

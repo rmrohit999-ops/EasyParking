@@ -30,14 +30,14 @@ export class AdminController {
   }
 
   @Post('users/:userId/suspend')
-  @ApiOperation({ summary: 'Suspend a user (blocks sign-in immediately, revokes all sessions)' })
+  @ApiOperation({ summary: 'Suspend a user (blocks sign-in immediately, revokes all sessions). Suspending another admin account requires SUPER_ADMIN.' })
   suspendUser(@CurrentUser() admin: AuthenticatedUser, @Param('userId') userId: string, @Body() dto: SuspendUserDto) {
-    return this.adminService.suspendUser(admin.id, userId, dto);
+    return this.adminService.suspendUser(admin.id, admin.roles, userId, dto);
   }
 
   @Post('users/:userId/reinstate')
-  @ApiOperation({ summary: 'Reinstate a suspended user' })
+  @ApiOperation({ summary: 'Reinstate a suspended user. Reinstating another admin account requires SUPER_ADMIN.' })
   reinstateUser(@CurrentUser() admin: AuthenticatedUser, @Param('userId') userId: string) {
-    return this.adminService.reinstateUser(admin.id, userId);
+    return this.adminService.reinstateUser(admin.id, admin.roles, userId);
   }
 }
