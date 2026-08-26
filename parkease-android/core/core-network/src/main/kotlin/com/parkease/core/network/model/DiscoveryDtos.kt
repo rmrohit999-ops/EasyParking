@@ -31,6 +31,26 @@ data class SearchListingResultResponse(
     val sections: List<SearchSectionResultResponse>,
     /** Presigned read URL for the listing's first active photo — null if it has none, or if storage isn't configured on this deployment. */
     val primaryPhotoUrl: String?,
+    /** Real average of driver-submitted reviews' `overall` rating, rounded to 1 decimal — null when ratingCount is 0, never a fabricated default. */
+    val averageRating: Double?,
+    val ratingCount: Int,
+)
+
+@JsonClass(generateAdapter = true)
+data class ReviewResponse(
+    val id: String,
+    val ratings: Map<String, Double?>,
+    val comment: String?,
+    val createdAt: String,
+    val reviewerLabel: String,
+)
+
+@JsonClass(generateAdapter = true)
+data class ListingReviewsResponse(
+    val page: Int,
+    val pageSize: Int,
+    val total: Int,
+    val results: List<ReviewResponse>,
 )
 
 @JsonClass(generateAdapter = true)

@@ -2,12 +2,20 @@
 package com.parkease.feature.booking.ui
 
 import android.app.Activity
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -21,6 +29,7 @@ import com.parkease.feature.booking.data.BookingUi
 import com.parkease.feature.booking.data.PassUi
 import com.parkease.feature.booking.data.QuoteUi
 import com.parkease.feature.booking.data.RefundUi
+import com.parkease.feature.booking.data.ReviewUi
 import com.razorpay.Checkout
 import org.json.JSONObject
 import java.time.ZoneId
@@ -89,6 +98,11 @@ fun BookingDetailScreen(
                     onOpenFullScreenPass = { onOpenPass(booking.id) },
                     onOpenActiveSession = { onOpenActiveSession(booking.id) },
                     refunds = uiState.refunds,
+                    myReview = uiState.myReview,
+                    isLoadingReview = uiState.isLoadingReview,
+                    isSubmittingReview = uiState.isSubmittingReview,
+                    reviewMessage = uiState.reviewMessage,
+                    onSubmitReview = viewModel::submitReview,
                 )
             }
 
@@ -121,6 +135,11 @@ private fun BookingDetailContent(
     onOpenFullScreenPass: () -> Unit,
     onOpenActiveSession: () -> Unit,
     refunds: List<RefundUi>,
+    myReview: ReviewUi?,
+    isLoadingReview: Boolean,
+    isSubmittingReview: Boolean,
+    reviewMessage: String?,
+    onSubmitReview: (overall: Int, cleanliness: Int?, security: Int?, location: Int?, comment: String?) -> Unit,
 ) {
     val canCancel = booking.status == BookingStatus.PENDING_PAYMENT || booking.status == BookingStatus.CONFIRMED
     val isActiveSession = booking.status == BookingStatus.CHECKED_IN || booking.status == BookingStatus.PARKING_ACTIVE
@@ -294,6 +313,16 @@ private fun BookingDetailContent(
             }
         }
 
+        if (booking.status == BookingStatus.COMPLETED) {
+            RateBookingCard(
+                myReview = myReview,
+                isLoading = isLoadingReview,
+                isSubmitting = isSubmittingReview,
+                message = reviewMessage,
+                onSubmit = onSubmitReview,
+            )
+        }
+
         if (refunds.isNotEmpty()) {
             ElevatedCard(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -313,6 +342,77 @@ private fun BookingDetailContent(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun RateBookingCard(
+    myReview: ReviewUi?,
+    isLoading: Boolean,
+    isSubmitting: Boolean,
+    message: String?,
+    onSubmit: (overall: Int, cleanliness: Int?, security: Int?, location: Int?, comment: String?) -> Unit,
+) {
+    ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            when {
+                isLoading -> CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                myReview != null -> {
+                    Text("Your Review", style = MaterialTheme.typography.titleSmall)
+                    StarRatingRow(rating = myReview.overall, onRatingSelected = null)
+                    myReview.comment?.takeIf { it.isNotBlank() }?.let {
+                        Text(it, style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+                else -> {
+                    var overall by remember { mutableIntStateOf(0) }
+                    var comment by remember { mutableStateOf("") }
+                    Text("Rate this parking", style = MaterialTheme.typography.titleSmall)
+                    StarRatingRow(rating = overall, onRatingSelected = { overall = it })
+                    OutlinedTextField(
+                        value = comment,
+                        onValueChange = { comment = it },
+                        placeholder = { Text("Add a comment (optional)") },
+                        modifier = Modifier.fillMaxWidth(),
+                        minLines = 2,
+                    )
+                    Button(
+                        onClick = { onSubmit(overall, null, null, null, comment.takeIf { it.isNotBlank() }) },
+                        enabled = overall in 1..5 && !isSubmitting,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        if (isSubmitting) {
+                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                        } else {
+                            Text("Submit Review")
+                        }
+                    }
+                }
+            }
+            message?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+            }
+        }
+    }
+}
+
+/** Tap-to-select when [onRatingSelected] is non-null; a read-only display of an already-submitted rating otherwise. */
+@Composable
+private fun StarRatingRow(rating: Int, onRatingSelected: ((Int) -> Unit)?) {
+    Row {
+        (1..5).forEach { star ->
+            val filled = star <= rating
+            Icon(
+                if (filled) Icons.Default.Star else Icons.Default.StarBorder,
+                contentDescription = "$star star${if (star == 1) "" else "s"}",
+                tint = if (filled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = if (onRatingSelected != null) {
+                    Modifier.size(32.dp).clickable { onRatingSelected(star) }
+                } else {
+                    Modifier.size(24.dp)
+                },
+            )
         }
     }
 }

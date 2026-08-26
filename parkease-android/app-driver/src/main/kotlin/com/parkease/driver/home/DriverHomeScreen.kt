@@ -24,8 +24,11 @@ import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.MyLocation
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.TwoWheeler
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.*
@@ -52,6 +55,7 @@ import com.parkease.core.maps.OsmMap
 import com.parkease.core.maps.PinColor
 import com.parkease.core.maps.RouteStyle
 import com.parkease.core.maps.launchNavigation
+import com.parkease.core.maps.radiusCircle
 import com.parkease.core.model.VehicleCategory
 import com.parkease.feature.driversearch.data.ListingResultUi
 import com.parkease.feature.driversearch.data.SectionResultUi
@@ -106,6 +110,9 @@ fun DriverHomeScreen(
             TopAppBar(
                 title = { Text("ParkEase") },
                 actions = {
+                    IconButton(onClick = { viewModel.refreshLocationAndSearch() }) {
+                        Icon(Icons.Default.Refresh, contentDescription = "Refresh")
+                    }
                     TextButton(onClick = { showAdvanceBooking = true }) { Text("Book in Advance") }
                     Box {
                         IconButton(onClick = { showOverflowMenu = true }) {
@@ -155,6 +162,9 @@ fun DriverHomeScreen(
                 isSearching = uiState.isSearchingAddress,
                 matches = uiState.addressMatches,
                 searchCenterLabel = uiState.searchCenterLabel,
+                currentLocationAddress = uiState.currentLocationAddress,
+                driverLatitude = uiState.driverLatitude,
+                driverLongitude = uiState.driverLongitude,
                 onQueryChange = viewModel::setAddressQuery,
                 onSearch = viewModel::searchAddress,
                 onSelectMatch = viewModel::selectAddressMatch,
@@ -168,40 +178,65 @@ fun DriverHomeScreen(
             )
 
             val visibleResults = if (uiState.favoritesOnly) uiState.results.filter { it.isFavorite } else uiState.results
+            val driverLat = uiState.driverLatitude
+            val driverLng = uiState.driverLongitude
+            // Real spec requirement: the map is the primary surface even
+            // with zero results or mid-search — the empty/loading states
+            // overlay it as cards rather than replacing it with blank text,
+            // so "Move the map to search another area" always has a map to
+            // move.
+            val showSearchThisArea = uiState.pannedCenter?.let { panned ->
+                val centerLat = uiState.searchCenterLatitude
+                val centerLng = uiState.searchCenterLongitude
+                centerLat != null && centerLng != null &&
+                    haversineMetersLocal(panned.latitude, panned.longitude, centerLat, centerLng) > 300.0
+            } ?: false
 
             Box(modifier = Modifier.weight(1f)) {
-                when {
-                    uiState.isLoading && uiState.results.isEmpty() -> LoadingSkeleton()
-                    visibleResults.isEmpty() && uiState.favoritesOnly -> Text(
-                        "No favorites in this area yet. Tap the heart on a listing to save it.",
-                        modifier = Modifier.align(Alignment.Center).padding(32.dp),
-                        textAlign = TextAlign.Center,
-                    )
-                    uiState.results.isEmpty() -> EmptyState(
-                        category = uiState.selectedCategory,
-                        radiusMeters = uiState.radiusMeters,
-                        onExpandRadius = {
-                            val next = RADIUS_CHOICES_METERS.firstOrNull { it > uiState.radiusMeters }
-                            if (next != null) viewModel.setRadius(next)
-                        },
-                    )
-                    else -> {
-                        val driverLat = uiState.driverLatitude
-                        val driverLng = uiState.driverLongitude
-                        Column(modifier = Modifier.fillMaxSize()) {
-                            if (driverLat != null && driverLng != null) {
-                                OsmMap(
-                                    pins = visibleResults.map { it.toMapPin() },
-                                    cameraCenter = GeoPoint(driverLat, driverLng),
-                                    modifier = Modifier.fillMaxWidth().weight(1f),
-                                    initialZoom = zoomForRadius(uiState.radiusMeters),
-                                    myLocationEnabled = true,
-                                    routes = uiState.routeToSelectedListing?.let {
-                                        listOf(MapRoute(points = it, style = RouteStyle.ROUTE_TO_ENTRANCE))
-                                    } ?: emptyList(),
-                                    onPinClick = { listingId -> viewModel.selectListing(listingId) },
-                                )
-                            }
+                if (driverLat == null || driverLng == null) {
+                    if (uiState.isLoading) {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+                    } else {
+                        LocationUnavailableState(
+                            message = uiState.errorMessage,
+                            onRetry = { viewModel.refreshLocationAndSearch() },
+                        )
+                    }
+                } else {
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        OsmMap(
+                            pins = visibleResults.map { it.toMapPin() },
+                            cameraCenter = GeoPoint(uiState.searchCenterLatitude ?: driverLat, uiState.searchCenterLongitude ?: driverLng),
+                            modifier = Modifier.fillMaxWidth().weight(1f),
+                            initialZoom = zoomForRadius(uiState.radiusMeters),
+                            myLocationEnabled = true,
+                            polygons = listOfNotNull(
+                                uiState.searchCenterLatitude?.let { lat ->
+                                    uiState.searchCenterLongitude?.let { lng -> radiusCircle(GeoPoint(lat, lng), uiState.radiusMeters.toDouble()) }
+                                },
+                            ),
+                            routes = uiState.routeToSelectedListing?.let {
+                                listOf(MapRoute(points = it, style = RouteStyle.ROUTE_TO_ENTRANCE))
+                            } ?: emptyList(),
+                            onPinClick = { listingId -> viewModel.selectListing(listingId) },
+                            onCameraMoved = viewModel::onMapPanned,
+                            onRecenterClick = { viewModel.refreshLocationAndSearch() },
+                        )
+
+                        if (uiState.isLoading && uiState.results.isEmpty()) {
+                            LoadingCarouselSkeleton()
+                        } else if (visibleResults.isEmpty() && uiState.favoritesOnly) {
+                            OverlayCard("No favorites in this area yet. Tap the heart on a listing to save it.")
+                        } else if (uiState.results.isEmpty() && !uiState.isLoading) {
+                            EmptyResultsCard(
+                                category = uiState.selectedCategory,
+                                radiusMeters = uiState.radiusMeters,
+                                onExpandRadius = {
+                                    val next = RADIUS_CHOICES_METERS.firstOrNull { it > uiState.radiusMeters }
+                                    if (next != null) viewModel.setRadius(next)
+                                },
+                            )
+                        } else {
                             Text(
                                 "Nearby",
                                 style = MaterialTheme.typography.titleSmall,
@@ -222,14 +257,25 @@ fun DriverHomeScreen(
                             }
                         }
                     }
-                }
 
-                uiState.errorMessage?.let {
-                    Text(
-                        it,
-                        color = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp),
-                    )
+                    if (showSearchThisArea) {
+                        ElevatedButton(
+                            onClick = { viewModel.searchThisArea() },
+                            modifier = Modifier.align(Alignment.TopCenter).padding(top = 12.dp),
+                        ) {
+                            Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Search this area")
+                        }
+                    }
+
+                    uiState.errorMessage?.let {
+                        Text(
+                            it,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp),
+                        )
+                    }
                 }
             }
         }
@@ -239,6 +285,8 @@ fun DriverHomeScreen(
     if (selectedListing != null) {
         ListingPreviewSheet(
             listing = selectedListing,
+            drivingDistanceMeters = uiState.routeToSelectedListingDistanceMeters,
+            drivingDurationSeconds = uiState.routeToSelectedListingDurationSeconds,
             onDismiss = { viewModel.selectListing(null) },
             onToggleFavorite = { viewModel.toggleFavorite(selectedListing.id) },
             onBookSection = { sectionId, isInstant ->
@@ -388,6 +436,9 @@ private fun AddressSearchRow(
     isSearching: Boolean,
     matches: List<GeocodedPlace>,
     searchCenterLabel: String?,
+    currentLocationAddress: String?,
+    driverLatitude: Double?,
+    driverLongitude: Double?,
     onQueryChange: (String) -> Unit,
     onSearch: () -> Unit,
     onSelectMatch: (GeocodedPlace) -> Unit,
@@ -417,13 +468,19 @@ private fun AddressSearchRow(
                 Text(place.label, modifier = Modifier.fillMaxWidth())
             }
         }
-        searchCenterLabel?.let {
-            Text(
-                "Showing results near \"$it\"",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(top = 4.dp),
-            )
+        // Never leave the location field blank: an explicit search shows
+        // where it's centered; otherwise fall back to the reverse-geocoded
+        // current position, and if even that failed, the raw coordinates —
+        // "Current Location: 12.9716, 77.5946" is still better than nothing.
+        val label = searchCenterLabel?.let { "Showing results near \"$it\"" }
+            ?: currentLocationAddress?.let { "Current Location: $it" }
+            ?: driverLatitude?.let { lat -> driverLongitude?.let { lng -> "Current Location: %.4f, %.4f".format(lat, lng) } }
+        label?.let {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
+                Icon(Icons.Default.MyLocation, contentDescription = null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.width(4.dp))
+                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+            }
         }
     }
 }
@@ -435,37 +492,82 @@ private fun PermissionRationale(modifier: Modifier = Modifier, onRequestPermissi
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Text("ParkEase needs your location to find nearby parking and give directions.", textAlign = TextAlign.Center)
+        Text("ParkEase needs your location to find nearby parking.", textAlign = TextAlign.Center)
         Spacer(Modifier.height(16.dp))
         Button(onClick = onRequestPermission) { Text("Enable Location") }
     }
 }
 
+/** Shown only when we have never obtained a GPS fix at all (a prior successful fix is preserved and never wiped, so this never appears just because ONE refresh failed). */
 @Composable
-private fun EmptyState(category: VehicleCategory, radiusMeters: Int, onExpandRadius: () -> Unit) {
-    val categoryLabel = if (category == VehicleCategory.TWO_WHEELER) "2-wheeler" else "4-wheeler"
-    val radiusLabel = if (radiusMeters < 1000) "${radiusMeters}m" else "${radiusMeters / 1000}km"
-    val nextRadius = RADIUS_CHOICES_METERS.firstOrNull { it > radiusMeters }
+private fun LocationUnavailableState(message: String?, onRetry: () -> Unit) {
     Column(
         modifier = Modifier.fillMaxSize().padding(32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
         Text(
-            "No $categoryLabel spots found within $radiusLabel.",
+            message ?: "We're finding your location…",
             style = MaterialTheme.typography.titleMedium,
             textAlign = TextAlign.Center,
         )
-        if (nextRadius != null) {
-            Spacer(Modifier.height(12.dp))
-            val nextLabel = if (nextRadius < 1000) "${nextRadius}m" else "${nextRadius / 1000}km"
-            OutlinedButton(onClick = onExpandRadius) { Text("Expand search to $nextLabel") }
+        Spacer(Modifier.height(12.dp))
+        OutlinedButton(onClick = onRetry) {
+            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Retry")
+        }
+    }
+}
+
+/** Overlaid at the bottom of the (still-visible) map — "no results" never hides the map, since the driver still needs it to see nearby context and use "Search this area." */
+@Composable
+private fun EmptyResultsCard(category: VehicleCategory, radiusMeters: Int, onExpandRadius: () -> Unit) {
+    val categoryLabel = if (category == VehicleCategory.TWO_WHEELER) "2-wheeler" else "4-wheeler"
+    val radiusLabel = if (radiusMeters < 1000) "${radiusMeters}m" else "${radiusMeters / 1000}km"
+    val nextRadius = RADIUS_CHOICES_METERS.firstOrNull { it > radiusMeters }
+    ElevatedCard(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), shape = RoundedCornerShape(16.dp)) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(
+                "No $categoryLabel spots found within $radiusLabel.",
+                style = MaterialTheme.typography.titleSmall,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(Modifier.height(10.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (nextRadius != null) {
+                    val nextLabel = if (nextRadius < 1000) "${nextRadius}m" else "${nextRadius / 1000}km"
+                    Button(onClick = onExpandRadius) { Text("Expand to $nextLabel") }
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "Or move the map to search another area.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
 
 @Composable
-private fun LoadingSkeleton() {
+private fun OverlayCard(message: String) {
+    ElevatedCard(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), shape = RoundedCornerShape(16.dp)) {
+        Text(
+            message,
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            textAlign = TextAlign.Center,
+            style = MaterialTheme.typography.bodyMedium,
+        )
+    }
+}
+
+/** A light shimmer row overlaid below the (already-visible) map while the first search for this position/radius/category is in flight — the map itself never disappears while loading. */
+@Composable
+private fun LoadingCarouselSkeleton() {
     val transition = rememberInfiniteTransition(label = "skeleton")
     val alpha by transition.animateFloat(
         initialValue = 0.35f,
@@ -473,18 +575,15 @@ private fun LoadingSkeleton() {
         animationSpec = infiniteRepeatable(tween(700), repeatMode = RepeatMode.Reverse),
         label = "skeletonAlpha",
     )
-    Column(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Box(
-            modifier = Modifier.fillMaxWidth().weight(1f).clip(RoundedCornerShape(16.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = alpha)),
-        )
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            repeat(3) {
-                Box(
-                    modifier = Modifier.size(width = 160.dp, height = 100.dp).clip(RoundedCornerShape(16.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = alpha)),
-                )
-            }
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        repeat(3) {
+            Box(
+                modifier = Modifier.width(160.dp).height(100.dp).clip(RoundedCornerShape(16.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = alpha)),
+            )
         }
     }
 }
@@ -509,7 +608,10 @@ private fun NearbyCard(listing: ListingResultUi, onClick: () -> Unit, onToggleFa
             }
         }
         Column(modifier = Modifier.padding(12.dp)) {
-            Text(listing.name, style = MaterialTheme.typography.titleSmall, maxLines = 1)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(listing.name, style = MaterialTheme.typography.titleSmall, maxLines = 1, modifier = Modifier.weight(1f, fill = false))
+                RatingLabel(listing.averageRating, listing.ratingCount)
+            }
             Text(formatDistanceAndWalk(listing.distanceMeters), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (section != null) {
                 Row(
@@ -521,6 +623,17 @@ private fun NearbyCard(listing: ListingResultUi, onClick: () -> Unit, onToggleFa
                 }
             }
         }
+    }
+}
+
+/** Real average of driver-submitted reviews only — renders nothing at all (not a fake "New" badge or 0-star icon) when ratingCount is 0, since "no reviews yet" isn't a rating. */
+@Composable
+private fun RatingLabel(averageRating: Double?, ratingCount: Int) {
+    if (averageRating == null || ratingCount == 0) return
+    Row(modifier = Modifier.padding(start = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+        Icon(Icons.Default.Star, contentDescription = null, tint = Color(0xFFFFA000), modifier = Modifier.size(14.dp))
+        Spacer(Modifier.width(2.dp))
+        Text("$averageRating ($ratingCount)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -542,9 +655,22 @@ private fun formatDistanceAndWalk(meters: Double): String {
     return "$distanceLabel away · ~$walkMinutes min walk"
 }
 
+private fun formatKm(meters: Double): String = if (meters < 1000) "${meters.roundToInt()} m" else "${"%.1f".format(meters / 1000)} km"
+
+/** Raw backend enum values (INDIVIDUAL/RESIDENTIAL/APARTMENT/COMMERCIAL/OFFICE/MALL/OTHER) formatted for display — no new data, just presentation. */
+private fun parkingTypeLabel(parkingType: String): String = parkingType.lowercase().replaceFirstChar { it.uppercase() } + " Parking"
+
+private fun vehicleCategoryLabel(category: VehicleCategory?): String = when (category) {
+    VehicleCategory.TWO_WHEELER -> "2-Wheeler"
+    VehicleCategory.FOUR_WHEELER -> "4-Wheeler"
+    else -> "All Vehicles"
+}
+
 @Composable
 private fun ListingPreviewSheet(
     listing: ListingResultUi,
+    drivingDistanceMeters: Double?,
+    drivingDurationSeconds: Double?,
     onDismiss: () -> Unit,
     onToggleFavorite: () -> Unit,
     onBookSection: (sectionId: String, isInstant: Boolean) -> Unit,
@@ -560,8 +686,11 @@ private fun ListingPreviewSheet(
                     contentScale = ContentScale.Crop,
                 )
             }
-            Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                Text(listing.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Row(horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                    Text(listing.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    RatingLabel(listing.averageRating, listing.ratingCount)
+                }
                 IconButton(onClick = onToggleFavorite) {
                     Icon(
                         if (listing.isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
@@ -572,9 +701,21 @@ private fun ListingPreviewSheet(
             }
             Text(listing.addressLine, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text(formatDistanceAndWalk(listing.distanceMeters), style = MaterialTheme.typography.bodyMedium)
+            // Only shown once a real OSRM-routed result exists (never for
+            // the straight-line fallback) — an honest, real driving figure
+            // or nothing, never a guessed one.
+            if (drivingDistanceMeters != null && drivingDurationSeconds != null) {
+                Text(
+                    "${formatKm(drivingDistanceMeters)} by road · ~${(drivingDurationSeconds / 60).roundToInt().coerceAtLeast(1)} min drive",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+            Text(parkingTypeLabel(listing.parkingType), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
             listing.sections.firstOrNull()?.let { section ->
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    BadgeChip(if (section.vehicleCategory == VehicleCategory.TWO_WHEELER) Icons.Default.TwoWheeler else Icons.Default.DirectionsCar, vehicleCategoryLabel(section.vehicleCategory))
                     if (section.hasSecurity) BadgeChip(Icons.Default.Security, "Security")
                     if (section.hasCctv) BadgeChip(Icons.Default.Videocam, "CCTV")
                 }

@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Query } from '@nestjs/common';
+import { Controller, DefaultValuePipe, Get, Param, ParseIntPipe, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser, AuthenticatedUser } from '../../common/decorators/current-user.decorator';
@@ -27,5 +27,15 @@ export class DiscoveryController {
   @ApiOperation({ summary: 'Approved sections for a listing, with live per-category availability' })
   listSections(@Param('listingId') listingId: string) {
     return this.discoveryService.listSections(listingId);
+  }
+
+  @Get('parking/:listingId/reviews')
+  @ApiOperation({ summary: 'Real driver reviews for a listing — lets a driver read reviews before booking' })
+  listReviews(
+    @Param('listingId') listingId: string,
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
+    @Query('pageSize', new DefaultValuePipe(20), ParseIntPipe) pageSize: number,
+  ) {
+    return this.discoveryService.listReviews(listingId, page, pageSize);
   }
 }

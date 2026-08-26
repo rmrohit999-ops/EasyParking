@@ -13,6 +13,7 @@ import com.parkease.feature.booking.data.PassUi
 import com.parkease.feature.booking.data.PaymentOrderUi
 import com.parkease.feature.booking.data.QuoteUi
 import com.parkease.feature.booking.data.RefundUi
+import com.parkease.feature.booking.data.ReviewUi
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -38,6 +39,10 @@ data class BookingDetailUiState(
     val refunds: List<RefundUi> = emptyList(),
     val quote: QuoteUi? = null,
     val cashInProgress: Boolean = false,
+    val myReview: ReviewUi? = null,
+    val isLoadingReview: Boolean = false,
+    val isSubmittingReview: Boolean = false,
+    val reviewMessage: String? = null,
 )
 
 @HiltViewModel
@@ -71,10 +76,28 @@ class BookingDetailViewModel @Inject constructor(
                     // own cashAmount/paymentOrder already shows what was
                     // actually charged, which is what matters at that point.
                     if (result.value.status == BookingStatus.PENDING_PAYMENT) loadQuote()
+                    if (result.value.status == BookingStatus.COMPLETED) loadMyReview()
                 }
                 is BookingActionResult.Error -> _uiState.value = _uiState.value.copy(isLoading = false, errorMessage = result.message)
             }
             loadRefunds()
+        }
+    }
+
+    private suspend fun loadMyReview() {
+        _uiState.value = _uiState.value.copy(isLoadingReview = true)
+        val review = repository.getMyReview(bookingId)
+        _uiState.value = _uiState.value.copy(isLoadingReview = false, myReview = review)
+    }
+
+    /** Rate a COMPLETED booking — the backend enforces "one review, only once completed" for real; this just surfaces whatever it decides. */
+    fun submitReview(overall: Int, cleanliness: Int?, security: Int?, location: Int?, comment: String?) {
+        _uiState.value = _uiState.value.copy(isSubmittingReview = true, reviewMessage = null)
+        viewModelScope.launch {
+            when (val result = repository.submitReview(bookingId, overall, cleanliness, security, location, comment)) {
+                is BookingActionResult.Success -> _uiState.value = _uiState.value.copy(isSubmittingReview = false, myReview = result.value)
+                is BookingActionResult.Error -> _uiState.value = _uiState.value.copy(isSubmittingReview = false, reviewMessage = result.message)
+            }
         }
     }
 

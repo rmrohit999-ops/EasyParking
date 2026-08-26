@@ -1,6 +1,7 @@
 package com.parkease.core.network.api
 
 import com.parkease.core.network.model.FavoriteListingResponse
+import com.parkease.core.network.model.ListingReviewsResponse
 import com.parkease.core.network.model.SearchResponse
 import retrofit2.http.DELETE
 import retrofit2.http.GET
@@ -33,4 +34,11 @@ interface DiscoveryApi {
 
     @GET("v1/favorites")
     suspend fun listFavorites(): List<FavoriteListingResponse>
+
+    @GET("v1/parking/{listingId}/reviews")
+    suspend fun listReviews(
+        @Path("listingId") listingId: String,
+        @Query("page") page: Int? = null,
+        @Query("pageSize") pageSize: Int? = null,
+    ): ListingReviewsResponse
 }

@@ -27,4 +27,10 @@ interface BookingApi {
 
     @POST("v1/bookings/{bookingId}/pay-cash")
     suspend fun payCash(@Path("bookingId") bookingId: String): BookingResponse
+
+    @POST("v1/bookings/{bookingId}/review")
+    suspend fun submitReview(@Path("bookingId") bookingId: String, @Body body: SubmitReviewRequest): MyReviewResponse
+
+    @GET("v1/bookings/{bookingId}/review")
+    suspend fun getMyReview(@Path("bookingId") bookingId: String): MyReviewResponse?
 }

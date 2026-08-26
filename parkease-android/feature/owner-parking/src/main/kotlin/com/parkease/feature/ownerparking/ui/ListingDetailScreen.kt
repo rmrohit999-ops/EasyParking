@@ -63,6 +63,7 @@ fun ListingDetailScreen(
                     onRemoveSection = viewModel::removeSection,
                     onSubmitForApproval = viewModel::submitForApproval,
                     onSetStatus = viewModel::setStatus,
+                    onSetSectionStatus = viewModel::setSectionStatus,
                 )
             }
 
@@ -87,6 +88,7 @@ private fun ListingDetailContent(
     onRemoveSection: (String) -> Unit,
     onSubmitForApproval: () -> Unit,
     onSetStatus: (ListingStatus) -> Unit,
+    onSetSectionStatus: (sectionId: String, status: ListingStatus) -> Unit,
 ) {
     LazyColumn(
         contentPadding = PaddingValues(16.dp),
@@ -118,7 +120,12 @@ private fun ListingDetailContent(
             SectionHeader("Sections (${detail.sections.size})")
         }
         items(detail.sections, key = { it.id }) { section ->
-            SectionRow(section = section, onRemove = { onRemoveSection(section.id) }, enabled = !actionInProgress)
+            SectionRow(
+                section = section,
+                onRemove = { onRemoveSection(section.id) },
+                onSetStatus = { status -> onSetSectionStatus(section.id, status) },
+                enabled = !actionInProgress,
+            )
         }
         item {
             OutlinedButton(onClick = onAddSection, enabled = !actionInProgress) { Text("Add section") }
@@ -153,23 +160,44 @@ private fun SectionHeader(text: String) {
 }
 
 @Composable
-private fun SectionRow(section: SectionUi, onRemove: () -> Unit, enabled: Boolean) {
+private fun SectionRow(section: SectionUi, onRemove: () -> Unit, onSetStatus: (ListingStatus) -> Unit, enabled: Boolean) {
+    // A section only shows up in driver search once it's BOTH approved AND
+    // active — two independent gates. Approval is admin-controlled (not
+    // toggleable here); status is fully owner-controlled, but the backend
+    // rejects ACTIVE until approval_status is APPROVED, so that's mirrored
+    // here to disable the button rather than let a tap fail with a
+    // confusing error.
+    val canActivate = section.approvalStatus?.name == "APPROVED"
     ElevatedCard(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(12.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(section.name, style = MaterialTheme.typography.bodyLarge)
-                Text(
-                    "${section.vehicleCategory?.name ?: "UNKNOWN"} · capacity ${section.capacity} · " +
-                        "${section.hourlyRate.toDisplayString()}/hr · ${section.approvalStatus?.name ?: "UNKNOWN"}",
-                    style = MaterialTheme.typography.bodySmall,
-                )
+        Column(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(section.name, style = MaterialTheme.typography.bodyLarge)
+                    Text(
+                        "${section.vehicleCategory?.name ?: "UNKNOWN"} · capacity ${section.capacity} · " +
+                            "${section.hourlyRate.toDisplayString()}/hr · Review: ${section.approvalStatus?.name ?: "UNKNOWN"} · Status: ${section.status?.name ?: "UNKNOWN"}",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    if (!canActivate) {
+                        Text(
+                            "Not visible to drivers until admin-approved.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                }
+                IconButton(onClick = onRemove, enabled = enabled) {
+                    Icon(Icons.Default.Delete, contentDescription = "Remove section")
+                }
             }
-            IconButton(onClick = onRemove, enabled = enabled) {
-                Icon(Icons.Default.Delete, contentDescription = "Remove section")
+            Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = { onSetStatus(ListingStatus.ACTIVE) }, enabled = enabled && canActivate) { Text("Activate") }
+                OutlinedButton(onClick = { onSetStatus(ListingStatus.PAUSED) }, enabled = enabled) { Text("Pause") }
             }
         }
     }

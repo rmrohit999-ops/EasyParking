@@ -1,4 +1,4 @@
-import { IsISO8601, IsOptional, IsString, IsUUID, MaxLength, MinLength } from 'class-validator';
+import { IsISO8601, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength } from 'class-validator';
 
 export class CreateHoldDto {
   @IsUUID()
@@ -40,4 +40,34 @@ export class AdminCancelBookingDto {
   @MinLength(3)
   @MaxLength(500)
   reason!: string;
+}
+
+export class SubmitReviewDto {
+  @IsInt()
+  @Min(1)
+  @Max(5)
+  overall!: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(5)
+  cleanliness?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(5)
+  security?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(5)
+  location?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  comment?: string;
 }

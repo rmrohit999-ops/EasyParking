@@ -198,12 +198,51 @@ export class DiscoveryService {
       );
     }
 
+    // Same bounded-to-page pattern as the photo lookup above — real
+    // averages from the `reviews` table (Review model existed unused since
+    // Milestone 0; this is the first thing to actually read it), never a
+    // fabricated rating. A listing with zero ACTIVE reviews simply gets
+    // averageRating: null / ratingCount: 0, distinguishable from "has a
+    // real low rating" on the client.
+    const ratingByListing = await this.fetchRatingSummaries(pageItems.map((l) => l.id));
+
     return {
       page,
       pageSize,
       totalListings: allListings.length,
-      results: pageItems.map((item) => ({ ...item, primaryPhotoUrl: photoUrlByListing.get(item.id) ?? null })),
+      results: pageItems.map((item) => ({
+        ...item,
+        primaryPhotoUrl: photoUrlByListing.get(item.id) ?? null,
+        averageRating: ratingByListing.get(item.id)?.average ?? null,
+        ratingCount: ratingByListing.get(item.id)?.count ?? 0,
+      })),
     };
+  }
+
+  /**
+   * `ratings` is a per-review Json breakdown (`{overall, cleanliness,
+   * security, location}` — see Review model); only `overall` is aggregated
+   * into the listing-level star rating shown to drivers. Bounded to the
+   * given listing ids so callers (search's page, one listing's detail) stay
+   * cheap regardless of total review volume.
+   */
+  private async fetchRatingSummaries(listingIds: string[]): Promise<Map<string, { average: number; count: number }>> {
+    const result = new Map<string, { average: number; count: number }>();
+    if (listingIds.length === 0) return result;
+
+    const rows = await this.prisma.$queryRawUnsafe<{ parking_id: string; avg_rating: number; rating_count: bigint }[]>(
+      `
+      SELECT parking_id, AVG((ratings->>'overall')::numeric) AS avg_rating, COUNT(*) AS rating_count
+      FROM reviews
+      WHERE parking_id = ANY($1::text[]) AND status = 'ACTIVE'
+      GROUP BY parking_id
+      `,
+      listingIds,
+    );
+    rows.forEach((row) => {
+      result.set(row.parking_id, { average: Math.round(Number(row.avg_rating) * 10) / 10, count: Number(row.rating_count) });
+    });
+    return result;
   }
 
   async getListingDetail(listingId: string) {
@@ -216,6 +255,7 @@ export class DiscoveryService {
       },
     });
     if (!listing) throw new NotFoundException('Parking listing not found.');
+    const ratingSummary = (await this.fetchRatingSummaries([listing.id])).get(listing.id);
 
     return {
       id: listing.id,
@@ -223,6 +263,8 @@ export class DiscoveryService {
       parkingType: listing.parking_type,
       description: listing.description,
       status: listing.status,
+      averageRating: ratingSummary?.average ?? null,
+      ratingCount: ratingSummary?.count ?? 0,
       location: listing.location
         ? {
             latitude: listing.location.latitude,
@@ -270,6 +312,46 @@ export class DiscoveryService {
       status: s.status,
       availableCount: computeAvailable(s.capacity, s.availability),
     }));
+  }
+
+  /** Public — lets a driver read reviews before booking, same "no auth needed to browse" posture as getListingDetail. Driver identity is deliberately reduced to a first-name-only label, not full contact details. */
+  async listReviews(listingId: string, page = 1, pageSize = 20) {
+    const listing = await this.prisma.parkingListing.findFirst({ where: { id: listingId, approval_status: ApprovalStatus.APPROVED } });
+    if (!listing) throw new NotFoundException('Parking listing not found.');
+
+    const [reviews, total] = await Promise.all([
+      this.prisma.review.findMany({
+        where: { parking_id: listingId, status: 'ACTIVE' },
+        orderBy: { created_at: 'desc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      this.prisma.review.count({ where: { parking_id: listingId, status: 'ACTIVE' } }),
+    ]);
+
+    // Review.driver_id has no declared Prisma relation (schema-only model,
+    // never built on before this) — a bounded follow-up lookup, same
+    // "no name field on User" gap booking.service.ts's toBookingView doc
+    // comment already discloses; first segment of the email local part is
+    // a reasonable, non-identifying-enough display label.
+    const drivers = await this.prisma.user.findMany({
+      where: { id: { in: reviews.map((r) => r.driver_id) } },
+      select: { id: true, email: true },
+    });
+    const emailByDriverId = new Map(drivers.map((d) => [d.id, d.email]));
+
+    return {
+      page,
+      pageSize,
+      total,
+      results: reviews.map((r) => ({
+        id: r.id,
+        ratings: r.ratings,
+        comment: r.comment,
+        createdAt: r.created_at,
+        reviewerLabel: emailByDriverId.get(r.driver_id)?.split('@')[0] ?? 'ParkEase driver',
+      })),
+    };
   }
 
   // ---------------------------------------------------------------------

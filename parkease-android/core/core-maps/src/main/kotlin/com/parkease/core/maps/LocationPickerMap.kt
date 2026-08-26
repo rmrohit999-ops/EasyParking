@@ -29,6 +29,8 @@ fun LocationPickerMap(
     onLocationSelected: (latitude: Double, longitude: Double) -> Unit,
     modifier: Modifier = Modifier,
     defaultCenter: GeoPoint = GeoPoint(20.5937, 78.9629), // geographic center of India — a neutral starting view, not a claim about the user's location
+    /** Shows the owner's own live GPS position (blue dot) alongside the red draggable parking pin — the owner may be physically away from the property they're registering, so the two are deliberately distinct: blue = where I am, red = where the parking is. */
+    myLocationEnabled: Boolean = false,
 ) {
     val hasPin = latitude != null && longitude != null
     val position = if (hasPin) GeoPoint(latitude!!, longitude!!) else defaultCenter
@@ -37,6 +39,7 @@ fun LocationPickerMap(
         cameraCenter = position,
         modifier = modifier,
         initialZoom = if (hasPin) DEFAULT_ZOOM_WITH_PIN else DEFAULT_ZOOM_NO_PIN,
+        myLocationEnabled = myLocationEnabled,
         draggablePin = position,
         onDraggablePinMoved = onLocationSelected,
         onMapClick = { point -> onLocationSelected(point.latitude, point.longitude) },

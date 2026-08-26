@@ -32,6 +32,7 @@ data class SectionResultUi(
 data class ListingResultUi(
     val id: String,
     val name: String,
+    val parkingType: String,
     val addressLine: String,
     val city: String,
     val latitude: Double,
@@ -40,6 +41,9 @@ data class ListingResultUi(
     val sections: List<SectionResultUi>,
     val primaryPhotoUrl: String?,
     val isFavorite: Boolean = false,
+    /** Real average of driver-submitted reviews — null when ratingCount is 0 (never a fabricated default rating). */
+    val averageRating: Double? = null,
+    val ratingCount: Int = 0,
 )
 
 data class FavoriteUi(
@@ -102,6 +106,7 @@ class DiscoveryRepository @Inject constructor(
                 ListingResultUi(
                     id = listing.id,
                     name = listing.name,
+                    parkingType = listing.parkingType,
                     addressLine = listing.addressLine,
                     city = listing.city,
                     latitude = listing.latitude,
@@ -109,6 +114,8 @@ class DiscoveryRepository @Inject constructor(
                     distanceMeters = listing.distanceMeters,
                     primaryPhotoUrl = listing.primaryPhotoUrl,
                     isFavorite = listing.id in favoriteIds,
+                    averageRating = listing.averageRating,
+                    ratingCount = listing.ratingCount,
                     sections = listing.sections.map { s ->
                         SectionResultUi(
                             id = s.id,

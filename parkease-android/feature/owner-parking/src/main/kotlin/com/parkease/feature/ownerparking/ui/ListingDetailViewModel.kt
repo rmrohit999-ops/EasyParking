@@ -64,6 +64,17 @@ class ListingDetailViewModel @Inject constructor(
         }
     }
 
+    /** Sections default to PAUSED when created and stay invisible to driver search until explicitly activated — see ParkingRepository.updateSectionStatus's doc comment for why this had no UI caller at all until now. */
+    fun setSectionStatus(sectionId: String, status: ListingStatus) {
+        _uiState.value = _uiState.value.copy(actionInProgress = true, errorMessage = null)
+        viewModelScope.launch {
+            when (val result = repository.updateSectionStatus(listingId, sectionId, status)) {
+                is ParkingResult.Success -> refresh()
+                is ParkingResult.Error -> _uiState.value = _uiState.value.copy(actionInProgress = false, errorMessage = result.message)
+            }
+        }
+    }
+
     fun removeSection(sectionId: String) {
         _uiState.value = _uiState.value.copy(actionInProgress = true, errorMessage = null)
         viewModelScope.launch {

@@ -7,19 +7,33 @@ import android.graphics.Color
 import android.graphics.DashPathEffect
 import android.graphics.Paint
 import android.graphics.drawable.BitmapDrawable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.MyLocation
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import org.osmdroid.config.Configuration
 import org.osmdroid.events.MapEventsReceiver
+import org.osmdroid.events.MapListener
+import org.osmdroid.events.ScrollEvent
+import org.osmdroid.events.ZoomEvent
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
@@ -29,6 +43,8 @@ import org.osmdroid.views.overlay.mylocation.GpsMyLocationProvider
 import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.math.cos
+import kotlin.math.sin
 import org.osmdroid.views.overlay.Polygon as OsmPolygon
 import org.osmdroid.views.overlay.Polyline as OsmPolyline
 
@@ -81,6 +97,27 @@ data class MapPolygon(
     val fillColorArgb: Int = 0x331E88E5,
 )
 
+/**
+ * A circular [MapPolygon] approximated as a 48-point ring around [center] —
+ * osmdroid has no native circle overlay, so "show the current search
+ * radius on the map" is drawn this way. Real geometry (proper great-circle
+ * offsets), not a decorative fixed-pixel circle that would look wrong at
+ * different zoom levels.
+ */
+fun radiusCircle(center: GeoPoint, radiusMeters: Double, strokeColorArgb: Int = 0xFF1E88E5.toInt(), fillColorArgb: Int = 0x1A1E88E5): MapPolygon {
+    val earthRadiusMeters = 6_371_000.0
+    val points = (0..48).map { i ->
+        val bearing = Math.toRadians(i * 360.0 / 48)
+        val angularDistance = radiusMeters / earthRadiusMeters
+        val lat1 = Math.toRadians(center.latitude)
+        val lon1 = Math.toRadians(center.longitude)
+        val lat2 = kotlin.math.asin(sin(lat1) * cos(angularDistance) + cos(lat1) * sin(angularDistance) * cos(bearing))
+        val lon2 = lon1 + kotlin.math.atan2(sin(bearing) * sin(angularDistance) * cos(lat1), cos(angularDistance) - sin(lat1) * sin(lat2))
+        GeoPoint(Math.toDegrees(lat2), Math.toDegrees(lon2))
+    }
+    return MapPolygon(points = points, strokeColorArgb = strokeColorArgb, fillColorArgb = fillColorArgb)
+}
+
 private val osmConfigured = AtomicBoolean(false)
 
 private fun ensureOsmdroidConfigured(context: Context) {
@@ -131,10 +168,15 @@ fun OsmMap(
     /** A single draggable pin (the location-picker use case) — null means none shown. */
     draggablePin: GeoPoint? = null,
     onDraggablePinMoved: (latitude: Double, longitude: Double) -> Unit = { _, _ -> },
+    /** Fires (with no debounce — osmdroid has no distinct "idle" event) as the user pans/zooms, so a caller can offer "Search this area." */
+    onCameraMoved: (GeoPoint) -> Unit = {},
+    /** Shows a small recenter FAB in the bottom-end corner; tapping it calls back so the caller can reset its own search/camera state to the driver's real GPS position. */
+    onRecenterClick: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     ensureOsmdroidConfigured(context)
+    val currentOnCameraMoved = rememberUpdatedState(onCameraMoved)
 
     val mapView = remember {
         MapView(context).apply {
@@ -143,6 +185,18 @@ fun OsmMap(
             setBuiltInZoomControls(showZoomControls)
             controller.setZoom(initialZoom)
             controller.setCenter(cameraCenter)
+            addMapListener(
+                object : MapListener {
+                    override fun onScroll(event: ScrollEvent?): Boolean {
+                        currentOnCameraMoved.value(GeoPoint(mapCenter.latitude, mapCenter.longitude))
+                        return false
+                    }
+                    override fun onZoom(event: ZoomEvent?): Boolean {
+                        currentOnCameraMoved.value(GeoPoint(mapCenter.latitude, mapCenter.longitude))
+                        return false
+                    }
+                },
+            )
         }
     }
 
@@ -170,8 +224,9 @@ fun OsmMap(
         mapView.controller.setZoom(initialZoom)
     }
 
+    Box(modifier = modifier) {
     AndroidView(
-        modifier = modifier,
+        modifier = Modifier.fillMaxSize(),
         factory = { mapView },
         update = { view ->
             view.setBuiltInZoomControls(showZoomControls)
@@ -264,4 +319,13 @@ fun OsmMap(
             view.invalidate()
         },
     )
+    if (onRecenterClick != null) {
+        FloatingActionButton(
+            onClick = onRecenterClick,
+            modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp).size(44.dp),
+        ) {
+            Icon(Icons.Default.MyLocation, contentDescription = "Recenter on my location")
+        }
+    }
+    }
 }

@@ -21,7 +21,9 @@
     "prisma:migrate:dev": "prisma migrate dev",
     "prisma:migrate:deploy": "prisma migrate deploy",
     "prisma:studio": "prisma studio",
-    "openapi:generate": "ts-node -r tsconfig-paths/register src/openapi-generate.ts"
+    "openapi:generate": "ts-node -r tsconfig-paths/register src/openapi-generate.ts",
+    "seed:demo-listings": "ts-node prisma/seed/seed-demo-listings.ts",
+    "cleanup:demo-listings": "ts-node prisma/seed/cleanup-demo-listings.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.658.1",

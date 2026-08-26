@@ -4,7 +4,7 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { Throttle } from '../../common/rate-limit/throttle.decorator';
 import { CurrentUser, AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import { BookingService } from './booking.service';
-import { ConfirmBookingDto, CreateHoldDto, CreateInstantBookingDto } from './dto/booking.dto';
+import { ConfirmBookingDto, CreateHoldDto, CreateInstantBookingDto, SubmitReviewDto } from './dto/booking.dto';
 
 /**
  * Cancellation (`/bookings/:id/cancel`, `/admin/bookings/:id/cancel`) moved
@@ -73,5 +73,20 @@ export class BookingController {
   @ApiOperation({ summary: 'Driver picks "pay with cash" — records intent and notifies both driver and owner; does not itself change booking status (see QrService.cashCollect for the actual confirmation)' })
   payCash(@CurrentUser() user: AuthenticatedUser, @Param('bookingId') bookingId: string) {
     return this.bookingService.payCash(user.id, bookingId);
+  }
+
+  @Post(':bookingId/review')
+  @Roles('DRIVER')
+  @Throttle({ limit: 10, windowSeconds: 60 })
+  @ApiOperation({ summary: 'Rate a completed booking — one review per booking' })
+  submitReview(@CurrentUser() user: AuthenticatedUser, @Param('bookingId') bookingId: string, @Body() dto: SubmitReviewDto) {
+    return this.bookingService.submitReview(user.id, bookingId, dto);
+  }
+
+  @Get(':bookingId/review')
+  @Roles('DRIVER')
+  @ApiOperation({ summary: "The caller's own review for this booking, or null if not yet reviewed" })
+  getMyReview(@CurrentUser() user: AuthenticatedUser, @Param('bookingId') bookingId: string) {
+    return this.bookingService.getMyReview(user.id, bookingId);
   }
 }

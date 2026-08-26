@@ -161,6 +161,11 @@ class ParkingRepository @Inject constructor(
         parkingApi.removeSection(listingId, sectionId)
     }
 
+    /** Sections default to PAUSED when created and stay invisible to driver search until explicitly activated here — same real backend rule updateListingStatus already goes through (ACTIVE requires the section to already be approval_status=APPROVED, enforced server-side, not just in this client). */
+    suspend fun updateSectionStatus(listingId: String, sectionId: String, status: ListingStatus): ParkingResult<SectionUi> = runCatchingApi {
+        parkingApi.updateSectionStatus(listingId, sectionId, UpdateSectionStatusRequest(status.name)).toUi()
+    }
+
     /**
      * Full upload flow: ask the backend for a presigned PUT URL, upload the
      * raw bytes directly to storage (never through our own API compute —

@@ -124,7 +124,8 @@ fun LocationFormScreen(
             }
 
             Text(
-                "Tap or drag the pin to the exact parking entrance",
+                "Select Location on Map — tap or drag the red pin to the exact parking entrance." +
+                    if (uiState.permissionState == LocationPermissionState.GRANTED) " Your own current position is shown in blue, for reference if you're setting this up while away from the property." else "",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -135,6 +136,7 @@ fun LocationFormScreen(
                     latitude = lat.toString()
                     longitude = lng.toString()
                 },
+                myLocationEnabled = uiState.permissionState == LocationPermissionState.GRANTED,
                 modifier = Modifier.fillMaxWidth().height(280.dp),
             )
 

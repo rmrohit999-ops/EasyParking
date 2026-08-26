@@ -9,6 +9,7 @@ import com.parkease.core.location.ForwardGeocodeResult
 import com.parkease.core.location.GeocodedPlace
 import com.parkease.core.location.LocationPermissionState
 import com.parkease.core.location.LocationResult
+import com.parkease.core.location.ReverseGeocodeResult
 import com.parkease.core.maps.RouteResult
 import com.parkease.core.maps.RoutingProfile
 import com.parkease.core.maps.RoutingRepository
@@ -30,6 +31,9 @@ import javax.inject.Inject
 val RADIUS_CHOICES_METERS = listOf(500, 1000, 3000, 5000)
 private const val DEFAULT_RADIUS_METERS = 1000
 
+/** How far the map has to be panned from the current search center before "Search this area" appears — avoids the button flickering in on a tiny accidental drag. */
+private const val SEARCH_THIS_AREA_THRESHOLD_METERS = 300.0
+
 data class DriverHomeUiState(
     val permissionState: LocationPermissionState = LocationPermissionState.NOT_REQUESTED,
     val isLoading: Boolean = false,
@@ -39,17 +43,27 @@ data class DriverHomeUiState(
     val filters: SearchFilters = SearchFilters(),
     val favoritesOnly: Boolean = false,
     val selectedListingId: String? = null,
-    /** The driver's real live GPS fix — used for the my-location overlay and as the walking/driving route origin, independent of where the map is currently centered/searching. */
+    /** The driver's real live GPS fix — used for the my-location overlay and as the walking/driving route origin, independent of where the map is currently centered/searching. Preserved across a later failed refresh (never wiped back to null) so the map/UI never goes blank once a real fix has been obtained. */
     val driverLatitude: Double? = null,
     val driverLongitude: Double? = null,
-    /** Where the current search is actually centered — the driver's GPS fix by default, or a searched address once one is picked. */
+    /** Reverse-geocoded label for the driver's own GPS position — shown as "Current Location: <this>" so the location field is never left blank. Null only while resolving or if geocoding is genuinely unavailable (map + coordinates still show either way). */
+    val currentLocationAddress: String? = null,
+    /** Where the current search is actually centered (may differ from driverLatitude/Longitude once an address search or "search this area" has been used). Always non-null once a first fix or search succeeds. */
+    val searchCenterLatitude: Double? = null,
+    val searchCenterLongitude: Double? = null,
+    /** Non-null only when the search center is a manually picked address/area, not the driver's live GPS. */
     val searchCenterLabel: String? = null,
     val addressQuery: String = "",
     val isSearchingAddress: Boolean = false,
     val addressMatches: List<GeocodedPlace> = emptyList(),
+    /** Live-updated as the driver pans the map — drives the "Search this area" affordance without re-running search until they actually tap it. */
+    val pannedCenter: GeoPoint? = null,
     /** Real routed line (or its straight-line fallback) from the driver's current position to the selected listing's entrance, drawn under the preview sheet. Null until a listing is selected and the route call resolves. */
     val routeToSelectedListing: List<GeoPoint>? = null,
     val routeToSelectedListingIsApproximate: Boolean = false,
+    /** Real driving distance/duration from OSRM — only populated for an actually-routed (non-fallback) result, so this is never a guessed number. */
+    val routeToSelectedListingDistanceMeters: Double? = null,
+    val routeToSelectedListingDurationSeconds: Double? = null,
     val errorMessage: String? = null,
 )
 
@@ -58,12 +72,13 @@ data class DriverHomeUiState(
  * "adaptive memory" — the last choice persists via DriverPreferences,
  * independent of which vehicle is registered as default), the 500m/1km/
  * 3km/5km radius chips (1km default per spec, not driver-search's plain
- * SearchScreen's 3km), search-by-address (re-centers the search away from
- * live GPS), a real routed line to whichever listing is selected, and the
- * map + nearby-carousel results feeding off all of that. Deliberately
- * composes the SAME DiscoveryRepository feature:driver-search's own
- * SearchScreen uses — this is a second, richer UI over identical real
- * search/favorites logic, not a parallel data layer that could drift from it.
+ * SearchScreen's 3km), search-by-address/pan-to-search (re-centers the
+ * search away from live GPS), a real routed line to whichever listing is
+ * selected, and the map + nearby-carousel results feeding off all of that.
+ * Deliberately composes the SAME DiscoveryRepository feature:driver-
+ * search's own SearchScreen uses — this is a second, richer UI over
+ * identical real search/favorites logic, not a parallel data layer that
+ * could drift from it.
  */
 @HiltViewModel
 class DriverHomeViewModel @Inject constructor(
@@ -79,7 +94,7 @@ class DriverHomeViewModel @Inject constructor(
     )
     val uiState: StateFlow<DriverHomeUiState> = _uiState.asStateFlow()
 
-    /** The point search runs against — the driver's GPS fix unless an address search overrides it. Distinct from driverLatitude/Longitude in the UI state, which always tracks the driver's real position. */
+    /** The point search runs against — mirrors searchCenterLatitude/Longitude in the UI state; kept as a plain field too since runSearch() reads it synchronously. */
     private var searchLat: Double? = null
     private var searchLng: Double? = null
 
@@ -97,18 +112,26 @@ class DriverHomeViewModel @Inject constructor(
         }
     }
 
+    /** Re-fetches a fresh GPS fix and re-searches around it — the "driver manually refreshes" / recenter-to-GPS path. Drops any address-search or pan-to-search override, same as [clearSearchedAddress]. */
     fun refreshLocationAndSearch() {
         _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
         viewModelScope.launch {
             when (val locationResult = locationClient.getCurrentLocation()) {
                 is LocationResult.Success -> {
-                    searchLat = locationResult.point.latitude
-                    searchLng = locationResult.point.longitude
+                    val lat = locationResult.point.latitude
+                    val lng = locationResult.point.longitude
+                    searchLat = lat
+                    searchLng = lng
                     _uiState.value = _uiState.value.copy(
-                        driverLatitude = searchLat,
-                        driverLongitude = searchLng,
+                        driverLatitude = lat,
+                        driverLongitude = lng,
+                        searchCenterLatitude = lat,
+                        searchCenterLongitude = lng,
                         searchCenterLabel = null,
+                        addressQuery = "",
+                        pannedCenter = null,
                     )
+                    resolveCurrentLocationAddress(lat, lng)
                     runSearch()
                 }
                 LocationResult.PermissionDenied -> _uiState.value = _uiState.value.copy(
@@ -116,10 +139,27 @@ class DriverHomeViewModel @Inject constructor(
                     permissionState = LocationPermissionState.DENIED,
                     errorMessage = "Location permission is needed to find nearby parking.",
                 )
+                // Deliberately does NOT clear driverLatitude/Longitude/searchCenter* —
+                // a prior successful fix (if any) stays on screen rather than the
+                // map/results going blank; "Do not fabricate a location" just means
+                // we don't invent a NEW one, not that we discard a real one we
+                // already have.
                 LocationResult.LocationUnavailable -> _uiState.value = _uiState.value.copy(
                     isLoading = false,
                     errorMessage = "We couldn't get your location. Please check your device's location settings and try again.",
                 )
+            }
+        }
+    }
+
+    private fun resolveCurrentLocationAddress(lat: Double, lng: Double) {
+        viewModelScope.launch {
+            when (val result = geocoder.reverseGeocode(lat, lng)) {
+                is ReverseGeocodeResult.Success -> _uiState.value = _uiState.value.copy(currentLocationAddress = result.address.addressLine)
+                // Unavailable is honestly disclosed by leaving currentLocationAddress
+                // null — the screen falls back to "Current Location (lat, lng)"
+                // rather than an empty field, per AddressGeocoder's own doc comment.
+                ReverseGeocodeResult.Unavailable -> Unit
             }
         }
     }
@@ -168,15 +208,7 @@ class DriverHomeViewModel @Inject constructor(
 
     /** Re-centers the search on a picked address rather than live GPS — driverLatitude/Longitude (the my-location dot) stay untouched. */
     fun selectAddressMatch(place: GeocodedPlace) {
-        searchLat = place.latitude
-        searchLng = place.longitude
-        _uiState.value = _uiState.value.copy(
-            addressMatches = emptyList(),
-            addressQuery = place.label,
-            searchCenterLabel = place.label,
-            selectedListingId = null,
-        )
-        runSearch()
+        recenterSearch(place.latitude, place.longitude, label = place.label)
     }
 
     /** Drops a searched-address override and goes back to searching around the driver's live position. */
@@ -184,14 +216,59 @@ class DriverHomeViewModel @Inject constructor(
         val lat = _uiState.value.driverLatitude
         val lng = _uiState.value.driverLongitude
         if (lat == null || lng == null) return
-        searchLat = lat
-        searchLng = lng
-        _uiState.value = _uiState.value.copy(addressQuery = "", searchCenterLabel = null, selectedListingId = null)
+        recenterSearch(lat, lng, label = null)
+    }
+
+    /** Called as the driver pans the map — just remembers where, doesn't re-search until they tap "Search this area". */
+    fun onMapPanned(point: GeoPoint) {
+        _uiState.value = _uiState.value.copy(pannedCenter = point)
+    }
+
+    /** True once the map has been panned far enough from the current search center to be worth offering a re-search. */
+    fun shouldOfferSearchThisArea(): Boolean {
+        val panned = _uiState.value.pannedCenter ?: return false
+        val centerLat = _uiState.value.searchCenterLatitude ?: return false
+        val centerLng = _uiState.value.searchCenterLongitude ?: return false
+        return haversineMetersLocal(panned.latitude, panned.longitude, centerLat, centerLng) > SEARCH_THIS_AREA_THRESHOLD_METERS
+    }
+
+    /** Re-runs the search centered on wherever the driver panned the map to — the spec's "Move the map to search another area." */
+    fun searchThisArea() {
+        val panned = _uiState.value.pannedCenter ?: return
+        _uiState.value = _uiState.value.copy(isSearchingAddress = true)
+        viewModelScope.launch {
+            val label = when (val geocode = geocoder.reverseGeocode(panned.latitude, panned.longitude)) {
+                is ReverseGeocodeResult.Success -> geocode.address.addressLine
+                ReverseGeocodeResult.Unavailable -> "this area"
+            }
+            _uiState.value = _uiState.value.copy(isSearchingAddress = false)
+            recenterSearch(panned.latitude, panned.longitude, label = label)
+        }
+    }
+
+    private fun recenterSearch(latitude: Double, longitude: Double, label: String?) {
+        searchLat = latitude
+        searchLng = longitude
+        _uiState.value = _uiState.value.copy(
+            searchCenterLatitude = latitude,
+            searchCenterLongitude = longitude,
+            searchCenterLabel = label,
+            addressQuery = label ?: "",
+            addressMatches = emptyList(),
+            pannedCenter = null,
+            selectedListingId = null,
+        )
         runSearch()
     }
 
     fun selectListing(listingId: String?) {
-        _uiState.value = _uiState.value.copy(selectedListingId = listingId, routeToSelectedListing = null, routeToSelectedListingIsApproximate = false)
+        _uiState.value = _uiState.value.copy(
+            selectedListingId = listingId,
+            routeToSelectedListing = null,
+            routeToSelectedListingIsApproximate = false,
+            routeToSelectedListingDistanceMeters = null,
+            routeToSelectedListingDurationSeconds = null,
+        )
         if (listingId == null) return
 
         val listing = _uiState.value.results.firstOrNull { it.id == listingId } ?: return
@@ -209,8 +286,16 @@ class DriverHomeViewModel @Inject constructor(
             // while this call was in flight — only apply it if still relevant.
             if (_uiState.value.selectedListingId != listingId) return@launch
             when (result) {
-                is RouteResult.Routed -> _uiState.value = _uiState.value.copy(routeToSelectedListing = result.points, routeToSelectedListingIsApproximate = false)
-                is RouteResult.Fallback -> _uiState.value = _uiState.value.copy(routeToSelectedListing = result.points, routeToSelectedListingIsApproximate = true)
+                is RouteResult.Routed -> _uiState.value = _uiState.value.copy(
+                    routeToSelectedListing = result.points,
+                    routeToSelectedListingIsApproximate = false,
+                    routeToSelectedListingDistanceMeters = result.distanceMeters,
+                    routeToSelectedListingDurationSeconds = result.durationSeconds,
+                )
+                is RouteResult.Fallback -> _uiState.value = _uiState.value.copy(
+                    routeToSelectedListing = result.points,
+                    routeToSelectedListingIsApproximate = true,
+                )
             }
         }
     }
@@ -252,4 +337,14 @@ class DriverHomeViewModel @Inject constructor(
             }
         }
     }
+}
+
+internal fun haversineMetersLocal(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
+    val earthRadiusMeters = 6_371_000.0
+    val dLat = Math.toRadians(lat2 - lat1)
+    val dLon = Math.toRadians(lon2 - lon1)
+    val a = kotlin.math.sin(dLat / 2) * kotlin.math.sin(dLat / 2) +
+        kotlin.math.cos(Math.toRadians(lat1)) * kotlin.math.cos(Math.toRadians(lat2)) * kotlin.math.sin(dLon / 2) * kotlin.math.sin(dLon / 2)
+    val c = 2 * kotlin.math.atan2(kotlin.math.sqrt(a), kotlin.math.sqrt(1 - a))
+    return earthRadiusMeters * c
 }

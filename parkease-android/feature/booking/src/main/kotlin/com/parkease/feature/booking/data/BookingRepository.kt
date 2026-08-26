@@ -14,10 +14,12 @@ import com.parkease.core.network.model.ConfirmBookingRequest
 import com.parkease.core.network.model.CreateHoldRequest
 import com.parkease.core.network.model.CreateInstantBookingRequest
 import com.parkease.core.network.model.CreatePaymentOrderRequest
+import com.parkease.core.network.model.MyReviewResponse
 import com.parkease.core.network.model.PaymentOrderResponse
 import com.parkease.core.network.model.QrPassResponse
 import com.parkease.core.network.model.RefundResponse
 import com.parkease.core.network.model.RetryPaymentRequest
+import com.parkease.core.network.model.SubmitReviewRequest
 import com.parkease.core.model.Money
 import java.math.BigInteger
 import java.time.Instant
@@ -68,6 +70,17 @@ data class PassUi(
     val token: String,
     val status: String,
     val expiresAt: Instant?,
+)
+
+data class ReviewUi(
+    val id: String,
+    val bookingId: String,
+    val overall: Int,
+    val cleanliness: Int?,
+    val security: Int?,
+    val location: Int?,
+    val comment: String?,
+    val createdAt: Instant?,
 )
 
 data class RefundUi(
@@ -190,6 +203,19 @@ class BookingRepository @Inject constructor(
         refundsApi.listForBooking(bookingId).map { it.toUi() }
     }
 
+    /** One review per COMPLETED booking — the backend rejects anything else (still-active bookings, a second attempt) with a real error, never silently accepted. */
+    suspend fun submitReview(bookingId: String, overall: Int, cleanliness: Int?, security: Int?, location: Int?, comment: String?): BookingActionResult<ReviewUi> =
+        runCatchingApi {
+            bookingApi.submitReview(bookingId, SubmitReviewRequest(overall, cleanliness, security, location, comment)).toReviewUi(bookingId)
+        }
+
+    /** Null (never an error) when the driver hasn't reviewed this booking yet — that's the expected common case, not a failure. */
+    suspend fun getMyReview(bookingId: String): ReviewUi? = try {
+        bookingApi.getMyReview(bookingId)?.toReviewUi(bookingId)
+    } catch (e: Exception) {
+        null
+    }
+
     private inline fun <T> runCatchingApi(block: () -> T): BookingActionResult<T> = try {
         BookingActionResult.Success(block())
     } catch (e: retrofit2.HttpException) {
@@ -234,6 +260,17 @@ private fun QrPassResponse.toUi() = PassUi(
     token = token,
     status = status,
     expiresAt = runCatching { Instant.parse(expiresAt) }.getOrNull(),
+)
+
+private fun MyReviewResponse.toReviewUi(fallbackBookingId: String) = ReviewUi(
+    id = id,
+    bookingId = bookingId.ifBlank { fallbackBookingId },
+    overall = ratings["overall"]?.toInt() ?: 0,
+    cleanliness = ratings["cleanliness"]?.toInt(),
+    security = ratings["security"]?.toInt(),
+    location = ratings["location"]?.toInt(),
+    comment = comment,
+    createdAt = runCatching { Instant.parse(createdAt) }.getOrNull(),
 )
 
 private fun com.parkease.core.network.model.BookingResponse.toUi() = BookingUi(

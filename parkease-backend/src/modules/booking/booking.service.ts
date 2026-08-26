@@ -6,7 +6,7 @@ import { AppConfig } from '../../common/config/configuration';
 import { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import { OCCUPIED_BOOKING_STATUSES, RESERVED_BOOKING_STATUSES, TERMINAL_BOOKING_STATUSES, isTransitionAllowed } from './booking-state-machine';
 import { BookingExpiryProducer } from './booking-expiry.queue';
-import { CancelBookingDto, ConfirmBookingDto, CreateHoldDto, CreateInstantBookingDto } from './dto/booking.dto';
+import { CancelBookingDto, ConfirmBookingDto, CreateHoldDto, CreateInstantBookingDto, SubmitReviewDto } from './dto/booking.dto';
 import { NotificationsService } from '../notifications/notifications.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { computePayableBreakdown } from '../payments/pricing';
@@ -341,6 +341,44 @@ export class BookingService {
 
     const updated = await this.prisma.booking.findUniqueOrThrow({ where: { id: bookingId } });
     return toBookingView(updated);
+  }
+
+  // ---------------------------------------------------------------------
+  // Reviews — the Review model existed unused in the schema since
+  // Milestone 0 (ratings: Json breakdown of overall/cleanliness/security/
+  // location, one per booking); this is the first real read/write path
+  // for it. One review per booking (unique booking_id), and only once the
+  // driver has actually completed that parking session — never
+  // speculative/pre-visit ratings.
+  // ---------------------------------------------------------------------
+
+  async submitReview(driverId: string, bookingId: string, dto: SubmitReviewDto) {
+    const booking = await this.prisma.booking.findUnique({ where: { id: bookingId } });
+    if (!booking) throw new NotFoundException('Booking not found.');
+    if (booking.driver_id !== driverId) throw new ForbiddenException('That booking does not belong to you.');
+    if (booking.status !== 'COMPLETED') {
+      throw new ConflictException(`You can only review a completed booking (this one is ${booking.status}).`);
+    }
+
+    const existing = await this.prisma.review.findUnique({ where: { booking_id: bookingId } });
+    if (existing) throw new ConflictException('You already reviewed this booking.');
+
+    const review = await this.prisma.review.create({
+      data: {
+        booking_id: bookingId,
+        driver_id: driverId,
+        parking_id: booking.parking_id,
+        ratings: { overall: dto.overall, cleanliness: dto.cleanliness ?? null, security: dto.security ?? null, location: dto.location ?? null },
+        comment: dto.comment,
+      },
+    });
+    return toReviewView(review);
+  }
+
+  async getMyReview(driverId: string, bookingId: string) {
+    const review = await this.prisma.review.findUnique({ where: { booking_id: bookingId } });
+    if (!review || review.driver_id !== driverId) return null;
+    return toReviewView(review);
   }
 
   private async canAccessBooking(
@@ -755,5 +793,17 @@ function toBookingView(b: {
     parkingLongitude: b.parking?.location?.longitude ?? null,
     cashAmountMinorUnits: cashCollection ? cashCollection.amount.toString() : null,
     cashConfirmedAt: cashCollection?.confirmed_at ?? null,
+  };
+}
+
+function toReviewView(r: { id: string; booking_id: string; parking_id: string; ratings: unknown; comment: string | null; created_at: Date; status: string }) {
+  return {
+    id: r.id,
+    bookingId: r.booking_id,
+    parkingId: r.parking_id,
+    ratings: r.ratings,
+    comment: r.comment,
+    createdAt: r.created_at,
+    status: r.status,
   };
 }

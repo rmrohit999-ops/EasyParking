@@ -59,3 +59,23 @@ data class BookingQuoteResponse(
     val taxAmountMinorUnits: String,
     val totalPayableMinorUnits: String,
 )
+
+@JsonClass(generateAdapter = true)
+data class SubmitReviewRequest(
+    val overall: Int,
+    val cleanliness: Int? = null,
+    val security: Int? = null,
+    val location: Int? = null,
+    val comment: String? = null,
+)
+
+@JsonClass(generateAdapter = true)
+data class MyReviewResponse(
+    val id: String,
+    val bookingId: String,
+    val parkingId: String,
+    val ratings: Map<String, Double?>,
+    val comment: String?,
+    val createdAt: String,
+    val status: String,
+)
