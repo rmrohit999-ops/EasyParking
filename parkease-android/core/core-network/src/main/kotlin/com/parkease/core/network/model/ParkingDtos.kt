@@ -161,3 +161,26 @@ data class PhotoResponse(
     val uploadedAt: String,
     val viewUrl: String,
 )
+
+@JsonClass(generateAdapter = true)
+data class AssignAttendantRequest(
+    val attendantEmail: String,
+    val authorizedCategories: List<String>,
+)
+
+@JsonClass(generateAdapter = true)
+data class AttendantInfoResponse(
+    val userId: String,
+    val email: String?,
+    val phone: String?,
+)
+
+@JsonClass(generateAdapter = true)
+data class AttendantAssignmentResponse(
+    val id: String,
+    val parkingId: String,
+    val authorizedCategories: List<String>,
+    val assignedAt: String,
+    val revokedAt: String?,
+    val attendant: AttendantInfoResponse,
+)

@@ -74,4 +74,16 @@ interface ParkingApi {
 
     @DELETE("v1/parking-listings/{listingId}/photos/{photoId}")
     suspend fun removePhoto(@Path("listingId") listingId: String, @Path("photoId") photoId: String)
+
+    @POST("v1/parking-listings/{listingId}/attendants")
+    suspend fun assignAttendant(
+        @Path("listingId") listingId: String,
+        @Body body: AssignAttendantRequest,
+    ): AttendantAssignmentResponse
+
+    @GET("v1/parking-listings/{listingId}/attendants")
+    suspend fun listAttendants(@Path("listingId") listingId: String): List<AttendantAssignmentResponse>
+
+    @DELETE("v1/parking-listings/{listingId}/attendants/{assignmentId}")
+    suspend fun revokeAttendant(@Path("listingId") listingId: String, @Path("assignmentId") assignmentId: String)
 }

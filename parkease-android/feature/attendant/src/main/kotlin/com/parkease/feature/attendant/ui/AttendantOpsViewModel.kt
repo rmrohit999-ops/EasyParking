@@ -2,6 +2,7 @@ package com.parkease.feature.attendant.ui
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.parkease.core.model.BookingStatus
 import com.parkease.feature.attendant.data.AttendantActionResult
 import com.parkease.feature.attendant.data.AttendantRepository
 import com.parkease.feature.attendant.data.ScanResultUi
@@ -18,6 +19,7 @@ data class AttendantOpsUiState(
     val scanResult: ScanResultUi? = null,
     val presentedRegistrationInput: String = "",
     val mismatchRegistrationInput: String = "",
+    val resolveReasonInput: String = "",
     val actionInProgress: Boolean = false,
     val message: String? = null,
     val isError: Boolean = false,
@@ -69,11 +71,27 @@ class AttendantOpsViewModel @Inject constructor(
         runAction { repository.checkOut(bookingId, token) }
     }
 
+    fun onResolveReasonChanged(value: String) {
+        _uiState.value = _uiState.value.copy(resolveReasonInput = value)
+    }
+
     fun reportMismatch() {
         val bookingId = _uiState.value.scanResult?.bookingId ?: return
         val registration = _uiState.value.mismatchRegistrationInput.trim()
         if (registration.isEmpty()) return
-        runAction { repository.reportMismatch(bookingId, registration, note = null) }
+        runStatusAction { repository.reportMismatch(bookingId, registration, note = null) }
+    }
+
+    /**
+     * Only REJECTED_ENTRY is offered here — ADMIN_OVERRIDE requires the
+     * ADMIN role server-side (qr.service.ts's resolveMismatch), so this
+     * screen (attendant/owner) sticks to the one resolution actually
+     * available to it: reject entry, which fully refunds the driver.
+     * Real backend endpoint existed with zero UI caller anywhere until now.
+     */
+    fun resolveMismatch() {
+        val bookingId = _uiState.value.scanResult?.bookingId ?: return
+        runStatusAction { repository.resolveMismatch(bookingId, "REJECTED_ENTRY", _uiState.value.resolveReasonInput.trim().ifBlank { null }) }
     }
 
     fun reset() {
@@ -89,6 +107,29 @@ class AttendantOpsViewModel @Inject constructor(
                     message = "Done: ${result.value}",
                     isError = false,
                 )
+                is AttendantActionResult.Error -> _uiState.value = _uiState.value.copy(
+                    actionInProgress = false,
+                    message = result.message,
+                    isError = true,
+                )
+            }
+        }
+    }
+
+    /** Like runAction, but for calls that return the booking's new BookingStatus — updates the displayed scan result so the UI reflects it (e.g. VEHICLE_MISMATCH) without needing a manual re-scan. */
+    private fun runStatusAction(block: suspend () -> AttendantActionResult<BookingStatus?>) {
+        _uiState.value = _uiState.value.copy(actionInProgress = true, message = null)
+        viewModelScope.launch {
+            when (val result = block()) {
+                is AttendantActionResult.Success -> {
+                    val currentScan = _uiState.value.scanResult
+                    _uiState.value = _uiState.value.copy(
+                        actionInProgress = false,
+                        message = "Done: ${result.value?.name ?: "updated"}",
+                        isError = false,
+                        scanResult = currentScan?.let { result.value?.let { status -> it.copy(bookingStatus = status) } ?: it },
+                    )
+                }
                 is AttendantActionResult.Error -> _uiState.value = _uiState.value.copy(
                     actionInProgress = false,
                     message = result.message,

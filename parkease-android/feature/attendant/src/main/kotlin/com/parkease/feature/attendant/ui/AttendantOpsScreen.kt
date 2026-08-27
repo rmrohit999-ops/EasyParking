@@ -9,6 +9,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.parkease.core.model.BookingStatus
 import com.parkease.feature.attendant.data.ScanResultUi
 
 /**
@@ -85,19 +86,46 @@ fun AttendantOpsScreen(
                     }
                 }
 
-                OutlinedTextField(
-                    value = uiState.mismatchRegistrationInput,
-                    onValueChange = viewModel::onMismatchRegistrationChanged,
-                    label = { Text("Actual registration seen (to report a mismatch)") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                OutlinedButton(
-                    onClick = viewModel::reportMismatch,
-                    enabled = !uiState.actionInProgress && uiState.mismatchRegistrationInput.isNotBlank(),
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text("Report Mismatch")
+                if (uiState.scanResult?.bookingStatus == BookingStatus.VEHICLE_MISMATCH) {
+                    ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+                        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("Mismatch reported", style = MaterialTheme.typography.titleSmall)
+                            Text(
+                                "Rejecting entry fully refunds the driver and ends this booking.",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                            OutlinedTextField(
+                                value = uiState.resolveReasonInput,
+                                onValueChange = viewModel::onResolveReasonChanged,
+                                label = { Text("Reason (optional)") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                            Button(
+                                onClick = viewModel::resolveMismatch,
+                                enabled = !uiState.actionInProgress,
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Text("Reject Entry (Refund Driver)")
+                            }
+                        }
+                    }
+                } else {
+                    OutlinedTextField(
+                        value = uiState.mismatchRegistrationInput,
+                        onValueChange = viewModel::onMismatchRegistrationChanged,
+                        label = { Text("Actual registration seen (to report a mismatch)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    OutlinedButton(
+                        onClick = viewModel::reportMismatch,
+                        enabled = !uiState.actionInProgress && uiState.mismatchRegistrationInput.isNotBlank(),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text("Report Mismatch")
+                    }
                 }
 
                 TextButton(onClick = viewModel::reset, modifier = Modifier.fillMaxWidth()) {

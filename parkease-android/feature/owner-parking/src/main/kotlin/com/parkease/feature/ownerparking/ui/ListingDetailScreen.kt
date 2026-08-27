@@ -6,6 +6,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -24,7 +25,9 @@ import com.parkease.feature.ownerparking.data.SectionUi
 fun ListingDetailScreen(
     onEditLocation: (String) -> Unit,
     onAddSection: (String) -> Unit,
+    onEditSection: (listingId: String, sectionId: String) -> Unit,
     onManagePhotos: (String) -> Unit,
+    onManageAttendants: (String) -> Unit,
     onBack: () -> Unit,
     viewModel: ListingDetailViewModel = hiltViewModel(),
 ) {
@@ -59,7 +62,9 @@ fun ListingDetailScreen(
                     actionInProgress = uiState.actionInProgress,
                     onEditLocation = { onEditLocation(viewModel.listingId) },
                     onAddSection = { onAddSection(viewModel.listingId) },
+                    onEditSection = { sectionId -> onEditSection(viewModel.listingId, sectionId) },
                     onManagePhotos = { onManagePhotos(viewModel.listingId) },
+                    onManageAttendants = { onManageAttendants(viewModel.listingId) },
                     onRemoveSection = viewModel::removeSection,
                     onSubmitForApproval = viewModel::submitForApproval,
                     onSetStatus = viewModel::setStatus,
@@ -84,7 +89,9 @@ private fun ListingDetailContent(
     actionInProgress: Boolean,
     onEditLocation: () -> Unit,
     onAddSection: () -> Unit,
+    onEditSection: (sectionId: String) -> Unit,
     onManagePhotos: () -> Unit,
+    onManageAttendants: () -> Unit,
     onRemoveSection: (String) -> Unit,
     onSubmitForApproval: () -> Unit,
     onSetStatus: (ListingStatus) -> Unit,
@@ -122,6 +129,7 @@ private fun ListingDetailContent(
         items(detail.sections, key = { it.id }) { section ->
             SectionRow(
                 section = section,
+                onEdit = { onEditSection(section.id) },
                 onRemove = { onRemoveSection(section.id) },
                 onSetStatus = { status -> onSetSectionStatus(section.id, status) },
                 enabled = !actionInProgress,
@@ -134,6 +142,11 @@ private fun ListingDetailContent(
         item {
             SectionHeader("Photos (${detail.photoCount})")
             OutlinedButton(onClick = onManagePhotos, enabled = !actionInProgress) { Text("Manage photos") }
+        }
+
+        item {
+            SectionHeader("Attendants")
+            OutlinedButton(onClick = onManageAttendants, enabled = !actionInProgress) { Text("Manage attendants") }
         }
 
         item {
@@ -160,7 +173,7 @@ private fun SectionHeader(text: String) {
 }
 
 @Composable
-private fun SectionRow(section: SectionUi, onRemove: () -> Unit, onSetStatus: (ListingStatus) -> Unit, enabled: Boolean) {
+private fun SectionRow(section: SectionUi, onEdit: () -> Unit, onRemove: () -> Unit, onSetStatus: (ListingStatus) -> Unit, enabled: Boolean) {
     // A section only shows up in driver search once it's BOTH approved AND
     // active — two independent gates. Approval is admin-controlled (not
     // toggleable here); status is fully owner-controlled, but the backend
@@ -189,6 +202,9 @@ private fun SectionRow(section: SectionUi, onRemove: () -> Unit, onSetStatus: (L
                             color = MaterialTheme.colorScheme.error,
                         )
                     }
+                }
+                IconButton(onClick = onEdit, enabled = enabled) {
+                    Icon(Icons.Default.Edit, contentDescription = "Edit section")
                 }
                 IconButton(onClick = onRemove, enabled = enabled) {
                     Icon(Icons.Default.Delete, contentDescription = "Remove section")

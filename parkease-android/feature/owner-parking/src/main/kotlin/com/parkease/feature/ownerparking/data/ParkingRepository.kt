@@ -72,6 +72,14 @@ data class PhotoUi(
     val viewUrl: String,
 )
 
+data class AttendantAssignmentUi(
+    val id: String,
+    val authorizedCategories: List<VehicleCategory>,
+    val assignedAt: String,
+    val attendantEmail: String?,
+    val attendantPhone: String?,
+)
+
 sealed class ParkingResult<out T> {
     data class Success<T>(val value: T) : ParkingResult<T>()
     data class Error(val message: String) : ParkingResult<Nothing>()
@@ -145,6 +153,44 @@ class ParkingRepository @Inject constructor(
             CreateSectionRequest(
                 name = name,
                 vehicleCategory = vehicleCategory.name,
+                supportedVehicleTypes = supportedVehicleTypes.map { it.name },
+                capacity = capacity,
+                hourlyRateMinorUnits = hourlyRateMinorUnits,
+                isCovered = isCovered,
+                hasSecurity = hasSecurity,
+                hasCctv = hasCctv,
+                hasEvCharging = hasEvCharging,
+                instantModeEnabled = instantModeEnabled,
+            ),
+        ).toUi()
+    }
+
+    /**
+     * vehicleCategory is deliberately not a parameter — the backend rejects
+     * changing it after creation (capacity/booking history are keyed off
+     * it; see UpdateSectionDto's doc comment), so this only ever touches
+     * the fields that are actually safe to edit in place. The Retrofit
+     * method (ParkingApi.updateSection) already existed with zero callers
+     * anywhere in the app before this.
+     */
+    suspend fun updateSection(
+        listingId: String,
+        sectionId: String,
+        name: String,
+        supportedVehicleTypes: List<VehicleType>,
+        capacity: Int,
+        hourlyRateMinorUnits: Int,
+        isCovered: Boolean,
+        hasSecurity: Boolean,
+        hasCctv: Boolean,
+        hasEvCharging: Boolean,
+        instantModeEnabled: Boolean,
+    ): ParkingResult<SectionUi> = runCatchingApi {
+        parkingApi.updateSection(
+            listingId,
+            sectionId,
+            UpdateSectionRequest(
+                name = name,
                 supportedVehicleTypes = supportedVehicleTypes.map { it.name },
                 capacity = capacity,
                 hourlyRateMinorUnits = hourlyRateMinorUnits,
@@ -242,6 +288,29 @@ class ParkingRepository @Inject constructor(
         parkingApi.removePhoto(listingId, photoId)
     }
 
+    /**
+     * Grants ATTENDANT access to this listing for an existing ParkEase
+     * account, identified by email — the backend requires the attendant to
+     * have already signed up (404 "needs to sign up first" otherwise, see
+     * ParkingService.assignAttendant). This — and listAttendants/
+     * revokeAttendant below — had a real, complete backend implementation
+     * (Retrofit interface too) with no repository or UI caller anywhere in
+     * either app before this: there was no way to onboard an attendant to
+     * a listing from the app at all.
+     */
+    suspend fun assignAttendant(listingId: String, attendantEmail: String, authorizedCategories: List<VehicleCategory>): ParkingResult<AttendantAssignmentUi> =
+        runCatchingApi {
+            parkingApi.assignAttendant(listingId, AssignAttendantRequest(attendantEmail.trim(), authorizedCategories.map { it.name })).toUi()
+        }
+
+    suspend fun listAttendants(listingId: String): ParkingResult<List<AttendantAssignmentUi>> = runCatchingApi {
+        parkingApi.listAttendants(listingId).map { it.toUi() }
+    }
+
+    suspend fun revokeAttendant(listingId: String, assignmentId: String): ParkingResult<Unit> = runCatchingApi {
+        parkingApi.revokeAttendant(listingId, assignmentId)
+    }
+
     private inline fun <T> runCatchingApi(block: () -> T): ParkingResult<T> = try {
         ParkingResult.Success(block())
     } catch (e: retrofit2.HttpException) {
@@ -270,6 +339,14 @@ private fun ListingResponse.toUi() = ListingUi(
     description = description,
     approvalStatus = approvalStatus.toEnumOrNull<ApprovalStatus>(),
     status = status.toEnumOrNull<ListingStatus>(),
+)
+
+private fun AttendantAssignmentResponse.toUi() = AttendantAssignmentUi(
+    id = id,
+    authorizedCategories = authorizedCategories.mapNotNull { it.toEnumOrNull<VehicleCategory>() },
+    assignedAt = assignedAt,
+    attendantEmail = attendant.email,
+    attendantPhone = attendant.phone,
 )
 
 private fun LocationResponse.toUi() = LocationUi(

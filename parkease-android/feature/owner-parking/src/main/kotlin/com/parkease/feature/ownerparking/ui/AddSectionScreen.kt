@@ -62,14 +62,39 @@ fun AddSectionScreen(
         if (uiState.saved) onSaved()
     }
 
+    // Prefill from the real existing section once it loads (edit mode only
+    // — uiState.existing stays null for a plain "add" screen).
+    LaunchedEffect(uiState.existing) {
+        uiState.existing?.let { section ->
+            name = section.name
+            category = section.vehicleCategory ?: category
+            selectedTypes = section.supportedVehicleTypes.toSet()
+            capacityText = section.capacity.toString()
+            hourlyRateText = (section.hourlyRate.minorUnits.toDouble() / 100).let {
+                if (it == it.toLong().toDouble()) it.toLong().toString() else it.toString()
+            }
+            isCovered = section.isCovered
+            hasSecurity = section.hasSecurity
+            hasCctv = section.hasCctv
+            hasEvCharging = section.hasEvCharging
+            instantModeEnabled = section.instantModeEnabled
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Add section") },
+                title = { Text(if (viewModel.isEditing) "Edit section" else "Add section") },
                 navigationIcon = { TextButton(onClick = onBack) { Text("Cancel") } },
             )
         },
     ) { padding ->
+        if (uiState.isLoadingExisting) {
+            Box(modifier = Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
+            return@Scaffold
+        }
         Column(
             modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(padding).padding(24.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -82,21 +107,35 @@ fun AddSectionScreen(
                 modifier = Modifier.fillMaxWidth(),
             )
 
-            ExposedDropdownMenuBox(expanded = categoryMenuExpanded, onExpandedChange = { categoryMenuExpanded = it }) {
+            if (viewModel.isEditing) {
+                // Backend rule (UpdateSectionDto's doc comment): category is
+                // close-and-recreate only, never an in-place edit — capacity/
+                // booking history are keyed off it.
                 OutlinedTextField(
                     value = categoryLabel(category),
                     onValueChange = {},
                     readOnly = true,
-                    label = { Text("Vehicle category") },
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = categoryMenuExpanded) },
-                    modifier = Modifier.fillMaxWidth().menuAnchor(),
+                    enabled = false,
+                    label = { Text("Vehicle category (can't be changed)") },
+                    modifier = Modifier.fillMaxWidth(),
                 )
-                ExposedDropdownMenu(expanded = categoryMenuExpanded, onDismissRequest = { categoryMenuExpanded = false }) {
-                    OWNER_SELECTABLE_CATEGORIES.forEach { option ->
-                        DropdownMenuItem(
-                            text = { Text(categoryLabel(option)) },
-                            onClick = { category = option; categoryMenuExpanded = false },
-                        )
+            } else {
+                ExposedDropdownMenuBox(expanded = categoryMenuExpanded, onExpandedChange = { categoryMenuExpanded = it }) {
+                    OutlinedTextField(
+                        value = categoryLabel(category),
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Vehicle category") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = categoryMenuExpanded) },
+                        modifier = Modifier.fillMaxWidth().menuAnchor(),
+                    )
+                    ExposedDropdownMenu(expanded = categoryMenuExpanded, onDismissRequest = { categoryMenuExpanded = false }) {
+                        OWNER_SELECTABLE_CATEGORIES.forEach { option ->
+                            DropdownMenuItem(
+                                text = { Text(categoryLabel(option)) },
+                                onClick = { category = option; categoryMenuExpanded = false },
+                            )
+                        }
                     }
                 }
             }
@@ -149,10 +188,17 @@ fun AddSectionScreen(
                         else -> null
                     }
                     if (validationError == null && capacity != null && rateMinorUnits != null) {
-                        viewModel.createSection(
-                            name.trim(), category, selectedTypes.toList(), capacity, rateMinorUnits,
-                            isCovered, hasSecurity, hasCctv, hasEvCharging, instantModeEnabled,
-                        )
+                        if (viewModel.isEditing) {
+                            viewModel.saveEdits(
+                                name.trim(), selectedTypes.toList(), capacity, rateMinorUnits,
+                                isCovered, hasSecurity, hasCctv, hasEvCharging, instantModeEnabled,
+                            )
+                        } else {
+                            viewModel.createSection(
+                                name.trim(), category, selectedTypes.toList(), capacity, rateMinorUnits,
+                                isCovered, hasSecurity, hasCctv, hasEvCharging, instantModeEnabled,
+                            )
+                        }
                     }
                 },
                 enabled = !uiState.isSaving,
@@ -161,7 +207,7 @@ fun AddSectionScreen(
                 if (uiState.isSaving) {
                     CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
                 } else {
-                    Text("Save section")
+                    Text(if (viewModel.isEditing) "Save changes" else "Save section")
                 }
             }
         }
